@@ -134,6 +134,9 @@ the viewport, before it is recycled. Do NOT scroll to the bottom and then scrape
 - Stop after N total scrolls OR after M consecutive scrolls that yield zero new IDs.
 - Use jittered, human-paced delays. Rapid programmatic scrolling both gets
   throttled/flagged by X and causes the harvester to miss recycled posts.
+- **User-disableable.** Auto-scroll is on by default but can be turned off in options
+  (→ manual harvesting as posts enter view), and paused/resumed for the session from the
+  on-page badge.
 
 ### Networking (common failure point)
 

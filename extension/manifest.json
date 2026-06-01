@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "xfeed harvester",
+  "version": "0.1.0",
+  "description": "Harvest your own logged-in X timeline into the local xfeed API. Personal use.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "http://127.0.0.1:8787/*",
+    "http://localhost:8787/*",
+    "https://x.com/*",
+    "https://twitter.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["selectors.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": { "default_title": "xfeed harvester — click for options" }
+}

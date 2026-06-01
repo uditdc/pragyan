@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>xfeed harvester — options</title>
+    <style>
+      body {
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: #16171c;
+        color: #d7dae2;
+        padding: 20px;
+        width: 320px;
+      }
+      h1 { font-size: 14px; color: #eef0f5; letter-spacing: 1px; }
+      label { display: block; margin: 14px 0 4px; color: #969cab; }
+      label.row { display: flex; align-items: center; gap: 8px; color: #d7dae2; }
+      label.row input { width: auto; }
+      input {
+        width: 100%;
+        background: #1c1e25;
+        border: 1px solid #2b2e38;
+        color: #d7dae2;
+        padding: 6px 8px;
+        border-radius: 4px;
+        font: inherit;
+      }
+      button {
+        margin-top: 16px;
+        background: #5cb6ac;
+        color: #16171c;
+        border: 0;
+        padding: 7px 14px;
+        border-radius: 4px;
+        font: inherit;
+        cursor: pointer;
+      }
+      #status { margin-left: 10px; color: #5cb6ac; }
+    </style>
+  </head>
+  <body>
+    <h1>◆ XFEED HARVESTER</h1>
+    <label for="apiBase">API base URL</label>
+    <input id="apiBase" type="text" placeholder="http://127.0.0.1:8787" />
+    <label for="batchSize">Batch size</label>
+    <input id="batchSize" type="number" min="1" max="200" />
+    <label class="row"><input id="autoScroll" type="checkbox" /> Auto-scroll the timeline</label>
+    <label for="scrollCap">Max scrolls per run</label>
+    <input id="scrollCap" type="number" min="1" max="1000" />
+    <label for="emptyStop">Stop after N empty scrolls</label>
+    <input id="emptyStop" type="number" min="1" max="50" />
+    <div>
+      <button id="save">Save</button>
+      <span id="status"></span>
+    </div>
+    <script src="options.js"></script>
+  </body>
+</html>
