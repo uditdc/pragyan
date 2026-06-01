@@ -164,6 +164,13 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const newsCount = cards.length - xCount;
   const stream = paused ? "paused" : online ? "live" : "offline";
 
+  const newPosts = paused ? buffer : newCount;
+  useEffect(() => {
+    if (!process.stdout.isTTY) return;
+    const title = newPosts > 0 ? `XFEED (${newPosts})` : "XFEED";
+    process.stdout.write(`\x1b]0;${title}\x07`);
+  }, [newPosts]);
+
   const select = useCallback(
     (index: number) => {
       if (cards.length === 0) return;
