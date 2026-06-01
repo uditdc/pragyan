@@ -3,7 +3,15 @@ import type { HarvestedPost, IngestResult } from "../shared/post.ts";
 import { config } from "./config.ts";
 import { prefilter } from "./prefilter.ts";
 import { dummyScore } from "./dummyScorer.ts";
-import { postExists, upsertPost, queryFeed } from "./db.ts";
+import {
+  postExists,
+  upsertPost,
+  queryFeed,
+  markViewed,
+  dismiss,
+  undismiss,
+} from "./db.ts";
+import { getSnapshot, startMarkets } from "./markets.ts";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -60,9 +68,43 @@ app.get("/feed", (req, res) => {
     limit: Math.min(200, Number(q.limit ?? 50)),
     news_only: q.news_only === "true",
     include_dropped: q.include_dropped === "true",
+    include_expired: q.include_expired === "true",
   });
   res.json(result);
 });
+
+function readIds(req: express.Request, res: express.Response): string[] | null {
+  const ids = req.body?.ids;
+  if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+    res.status(400).json({ error: "body must be { ids: string[] }" });
+    return null;
+  }
+  return ids;
+}
+
+app.post("/viewed", (req, res) => {
+  const ids = readIds(req, res);
+  if (!ids) return;
+  res.json({ updated: markViewed(ids, new Date().toISOString()) });
+});
+
+app.post("/dismiss", (req, res) => {
+  const ids = readIds(req, res);
+  if (!ids) return;
+  res.json({ dismissed: dismiss(ids, new Date().toISOString()) });
+});
+
+app.post("/undismiss", (req, res) => {
+  const ids = readIds(req, res);
+  if (!ids) return;
+  res.json({ restored: undismiss(ids) });
+});
+
+app.get("/markets", (_req, res) => {
+  res.json(getSnapshot());
+});
+
+startMarkets();
 
 app.listen(config.server.port, config.server.host, () => {
   console.log(

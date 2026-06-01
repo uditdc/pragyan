@@ -84,7 +84,13 @@ component logic.
   //   "is_news": false,         // gate
   //   "news_confidence": 0.0
   // },
-  "scored_at": "ISO-8601|null"   // null = needs scoring. THE Stage-2 work-queue cursor.
+  "scored_at": "ISO-8601|null", // null = needs scoring. THE Stage-2 work-queue cursor.
+
+  // --- Feed lifecycle; sticky, set by the API, preserved on re-ingest (like scored_at) ---
+  "viewed_at": "ISO-8601|null",  // set when the TUI reports the post as read (selected)
+  "expired_at": "ISO-8601|null"  // set on manual dismiss. Row is NEVER deleted; /feed
+                                 // hides it. Auto-expiry (TTL) is applied in the query,
+                                 // not stored — see Section 4.
 
   // NOTE: the composite ordering score is NOT stored — it is computed at query time
   // from `scores` and the configured weights, so re-tuning weights needs no re-score.
@@ -182,12 +188,36 @@ A small options page or hardcoded config for: API base URL, scroll cap, batch si
 
 - `GET /feed`
   - Query: `min_score`, `since` (cursor on `harvested_at`), `limit`, optional
-    `news_only=true`, optional `include_dropped=true` (default hides `kept=false`).
+    `news_only=true`, optional `include_dropped=true` (default hides `kept=false`),
+    optional `include_expired=true` (default hides expired — see below).
   - Returns `Post[]` ordered by the **query-time composite** (highest first), gated by
     `is_news` when `news_only`. Unscored posts (`scores=null`) sort last / are excluded
     when `min_score>0`.
   - Cursor: `since` is an ISO `harvested_at`; response includes the max `harvested_at`
     seen so the TUI can pass it back next poll.
+
+- Feed-state controls (the TUI emits these; **all expiry policy stays server-side**):
+  - `POST /viewed`    `{ ids: string[] }` → set `viewed_at` (if null). Returns `{ updated }`.
+  - `POST /dismiss`   `{ ids: string[] }` → set `expired_at = now`. Returns `{ dismissed }`.
+  - `POST /undismiss` `{ ids: string[] }` → clear `expired_at`. Returns `{ restored }`.
+
+- **Auto-expiry (hybrid, applied lazily in the `/feed` query, never stored):** a post is
+  hidden when `expired_at` is set, OR it was viewed longer than `viewed_ttl_min` ago, OR
+  it was harvested longer than `unviewed_ttl_hours` ago (the backstop so unseen news
+  isn't lost but nothing lingers forever). All three TTLs are config (Section 6).
+  `include_expired=true` bypasses this filter for debugging/re-tuning.
+
+- `GET /markets` — additional, non-tweet sources (separate from the post pipeline; no
+  SQLite). A background loop refreshes an in-memory cache on `sources.poll_interval_ms`;
+  the endpoint just returns the latest `MarketsSnapshot` (`shared/market.ts`):
+  `{ crypto: Ticker[], indices: Ticker[], polymarkets: PredictionMarket[], fetched_at, stale }`.
+  - `sources.provider` selects **mock** (random-walking demo data) or **real** keyless
+    providers: CoinGecko (BTC), Yahoo Finance `^NSEI` (Nifty 50), and Polymarket gamma
+    **`/events`** (top events by 24h volume, collapsed one-row-per-event with the leading
+    outcome — so a 60-team event like the World Cup is a single "France 17%" row, not 60
+    longshots). The real provider degrades gracefully — a failed source keeps its last good
+    values and sets `stale: true`. ~3 outbound calls per `poll_interval_ms` (default 60s),
+    well under provider rate limits.
 
 - `GET /health` — for the TUI to detect the server.
 
@@ -256,8 +286,15 @@ the consolidated feed to the terminal height and tracks a scroll offset itself.
 **Design system** (from the Claude Design "FEEDWIRE" handoff): a muted dark realistic-TUI
 look — color is emphasis only. Full-screen alternate buffer with two fixed chrome bars and
 a flexing body between them:
-- **Top bar** — `◆ XFEED` identity · `all`/`news` filter · `min` threshold · live/offline
+- **Top bar** — `◆ XFEED` identity · **tab chips** (`1 feed · 2 crypto · 3 nifty ·
+  4 polymarket`, active chip bright) · `all`/`news` filter · `min` threshold · live/offline
   dot · item count · clock.
+- **Tabs** — number keys `1-4` (and `Tab`/`Shift+Tab`) switch views. `Feed` is the X-post
+  two-pane; `Crypto`/`Nifty`/`Polymarket` are full-width market views (`MarketView`,
+  reusing the design's `Ticker`/`Column`). Markets come from `GET /markets`, polled
+  separately (~10s) into `markets` state.
+- **Sticky market strip** — on the Feed tab, a compact one-line bar (`MarketStrip`) is
+  pinned above the scrolling posts: `BTC price ▲Δ% · NIFTY price ▲Δ% · ◆ <#1 polymarket>`.
 - **Two-pane body** — a feed list (`flexGrow`) + a `borderLeft` detail pane (hidden under
   80 cols). `↑↓`/`j`/`k` move a `selectedIndex`; the detail pane re-renders from the
   selection (full text, all thread parts, metrics, and the `scores` block).
@@ -277,9 +314,16 @@ Behavior:
   (falling back to consecutive same-author `is_thread` posts) into one stacked card,
   ordered by `created_at`. The store keeps them as individual rows — only rendering
   stitches them; the lead shows compact, the detail pane shows all parts.
-- Keybindings: `j/k`+arrows move · `g/G` top/bottom · `enter`/`o` open link · `t` cycle
-  threshold · `n` toggle `news_only` · `space` pause · `r` refresh · `q` quit.
-- Strictly read-only. No ranking, no scraping, no writes.
+- Keybindings: `1-4`/`Tab` switch tabs · `j/k`+arrows move · `g/G` top/bottom ·
+  `enter`/`o` open link · `x` dismiss (expire selected) · `u` undo last dismiss ·
+  `t` cycle threshold · `n` toggle `news_only` · `space` pause · `r` refresh · `q` quit.
+  (Feed-specific keys act only on the Feed tab; `1-4`/`Tab`/`r`/`q` are global.)
+- **Read-only on content/ranking.** The TUI does no scraping, ranking, or scoring. It
+  *does* emit lightweight feed-state control events — reports the selected post as
+  `viewed`, and `dismiss`/`undismiss` on `x`/`u` — but all expiry policy lives in the API.
+  Selecting a card (active navigation, not the initial auto-select) marks its posts viewed;
+  the ids are batched and POSTed to `/viewed`. Viewed posts then auto-expire server-side
+  after `viewed_ttl_min`, so the feed self-clears like an unread inbox.
 
 ---
 
@@ -295,6 +339,10 @@ Two config surfaces, kept deliberately small. Re-tuning the feed should never to
   `drop_replies` (default **true**), `min_text_len`, `clickbait_phrases`.
 - `scoring`: `model` (default `claude-haiku-4-5`), `batch_size` (10–20),
   `max_concurrent_batches`, poll interval for the background loop.
+- `expiry`: `viewed_ttl_min` (default 10 — how long a read post lingers),
+  `unviewed_ttl_hours` (default 48 — backstop age-out for everything), `mark_viewed_on`.
+- `sources`: `provider` (`mock` default | `real`), `poll_interval_ms` (market refresh),
+  `polymarket_count` (top-N markets).
 
 **Extension config** (options page or hardcoded) — owns harvest behavior:
 - `api_base_url`, `scroll_cap`, `consecutive_empty_stop`, `batch_size`, jitter range.

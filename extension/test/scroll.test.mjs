@@ -63,6 +63,7 @@ globalThis.chrome = {
           maxDelayMs: 2,
           settleTimeoutMs: 40,
           settleIntervalMs: 5,
+          reloadOnDone: false,
         }),
     },
   },

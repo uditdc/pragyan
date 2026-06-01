@@ -51,6 +51,9 @@ export interface Post {
 
   scores: Scores | null;
   scored_at: string | null;
+
+  viewed_at: string | null;
+  expired_at: string | null;
 }
 
 export type HarvestedPost = Pick<

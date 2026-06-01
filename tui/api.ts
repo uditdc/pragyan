@@ -33,3 +33,20 @@ export async function fetchFeed(params: FeedParams): Promise<FeedResponse> {
   if (!res.ok) throw new Error(`feed ${res.status}`);
   return (await res.json()) as FeedResponse;
 }
+
+async function postIds(baseUrl: string, path: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+    signal: AbortSignal.timeout(5000),
+  });
+}
+
+export const postViewed = (baseUrl: string, ids: string[]) =>
+  postIds(baseUrl, "/viewed", ids);
+export const postDismiss = (baseUrl: string, ids: string[]) =>
+  postIds(baseUrl, "/dismiss", ids);
+export const postUndismiss = (baseUrl: string, ids: string[]) =>
+  postIds(baseUrl, "/undismiss", ids);

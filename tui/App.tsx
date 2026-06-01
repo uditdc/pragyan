@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdin } from "ink";
 import type { Post } from "../shared/post.ts";
-import { fetchFeed } from "./api.ts";
+import { fetchFeed, postViewed, postDismiss, postUndismiss } from "./api.ts";
 import { consolidateThreads } from "./threads.ts";
 import { pickWindow } from "./layout.ts";
 import { fmtClock } from "./format.ts";
@@ -11,6 +11,12 @@ import { StatusBar } from "./StatusBar.tsx";
 import { FeedItem } from "./FeedItem.tsx";
 import { DetailPane } from "./DetailPane.tsx";
 import { openInBrowser } from "./browser.ts";
+import { fetchMarkets } from "./markets.ts";
+import type { MarketsSnapshot } from "../shared/market.ts";
+import { MarketStrip } from "./MarketStrip.tsx";
+import { MarketView, type MarketTab } from "./MarketView.tsx";
+
+const MARKET_TABS: MarketTab[] = ["crypto", "nifty", "polymarket"];
 
 const THRESHOLDS = [0, 0.2, 0.4, 0.6];
 
@@ -49,11 +55,15 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const [online, setOnline] = useState(false);
   const [buffer, setBuffer] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [tabIdx, setTabIdx] = useState(0);
+  const [markets, setMarkets] = useState<MarketsSnapshot | null>(null);
 
   const seenRef = useRef<Set<string>>(new Set());
   const freshRef = useRef<Set<string>>(new Set());
   const pendingRef = useRef<Post[] | null>(null);
   const firstLoadRef = useRef(true);
+  const viewedPendingRef = useRef<Set<string>>(new Set());
+  const undoRef = useRef<string[][]>([]);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
 
@@ -87,15 +97,42 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     }
   }, [baseUrl, minScore, newsOnly, limit, apply]);
 
+  const loadMarkets = useCallback(async () => {
+    try {
+      setMarkets(await fetchMarkets(baseUrl));
+    } catch {
+      /* keep last snapshot; TopBar already reflects offline */
+    }
+  }, [baseUrl]);
+
   useEffect(() => {
     void load();
+    void loadMarkets();
     const poll = setInterval(() => void load(), pollMs);
+    const marketPoll = setInterval(() => void loadMarkets(), 10_000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       clearInterval(poll);
+      clearInterval(marketPoll);
       clearInterval(clock);
     };
-  }, [load, pollMs]);
+  }, [load, loadMarkets, pollMs]);
+
+  useEffect(() => {
+    const flushViewed = () => {
+      const ids = [...viewedPendingRef.current];
+      if (ids.length === 0) return;
+      viewedPendingRef.current.clear();
+      void postViewed(baseUrl, ids).catch(() => {
+        for (const id of ids) viewedPendingRef.current.add(id);
+      });
+    };
+    const timer = setInterval(flushViewed, 3000);
+    return () => {
+      clearInterval(timer);
+      flushViewed();
+    };
+  }, [baseUrl]);
 
   const selectedIndex = useMemo(() => {
     const i = cards.findIndex((c) => c.key === selectedId);
@@ -107,10 +144,11 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     if (!cards.some((c) => c.key === selectedId)) setSelectedId(cards[0].key);
   }, [cards, selectedId]);
 
-  const detailWidth = columns >= 80 ? Math.min(46, Math.floor(columns * 0.36)) : 0;
+  const onFeedTab = tabIdx === 0;
+  const detailWidth = onFeedTab && columns >= 80 ? Math.min(46, Math.floor(columns * 0.36)) : 0;
   const feedWidth = columns - detailWidth;
   const bodyRows = Math.max(3, rows - 2);
-  const feedRows = Math.max(1, bodyRows - 1);
+  const feedRows = Math.max(1, bodyRows - 2);
 
   const win = pickWindow(cards, selectedIndex, start, feedRows, feedWidth);
   useEffect(() => {
@@ -130,7 +168,9 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     (index: number) => {
       if (cards.length === 0) return;
       const clamped = Math.max(0, Math.min(cards.length - 1, index));
-      setSelectedId(cards[clamped].key);
+      const card = cards[clamped];
+      for (const part of card.parts) viewedPendingRef.current.add(part.id);
+      setSelectedId(card.key);
     },
     [cards],
   );
@@ -139,7 +179,24 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     (input, key) => {
       if (input === "q" || (key.ctrl && input === "c")) {
         exit();
-      } else if (input === "j" || key.downArrow) {
+        return;
+      }
+      if (input >= "1" && input <= "4") {
+        setTabIdx(Number(input) - 1);
+        return;
+      }
+      if (key.tab) {
+        setTabIdx((i) => (key.shift ? (i + 3) % 4 : (i + 1) % 4));
+        return;
+      }
+      if (input === "r") {
+        void load();
+        void loadMarkets();
+        return;
+      }
+      if (tabIdx !== 0) return;
+
+      if (input === "j" || key.downArrow) {
         select(selectedIndex + 1);
       } else if (input === "k" || key.upArrow) {
         select(selectedIndex - 1);
@@ -160,8 +217,18 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       } else if (input === "n") {
         setNewsOnly((v) => !v);
         setStart(0);
-      } else if (input === "r") {
-        void load();
+      } else if (input === "x") {
+        if (selectedCard) {
+          const ids = selectedCard.parts.map((p) => p.id);
+          const next = cards[selectedIndex + 1] ?? cards[selectedIndex - 1] ?? null;
+          undoRef.current.push(ids);
+          setPosts((prev) => prev.filter((p) => !ids.includes(p.id)));
+          if (next) setSelectedId(next.key);
+          void postDismiss(baseUrl, ids).catch(() => {});
+        }
+      } else if (input === "u") {
+        const ids = undoRef.current.pop();
+        if (ids) void postUndismiss(baseUrl, ids).then(load).catch(() => {});
       } else if (input === " ") {
         setPaused((v) => {
           const next = !v;
@@ -185,49 +252,61 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         newsOnly={newsOnly}
         minScore={minScore}
         clock={fmtClock(now)}
+        tabIdx={tabIdx}
       />
 
-      <Box height={bodyRows} width={columns}>
-        <Box flexDirection="column" width={feedWidth} height={bodyRows}>
-          <Box height={1} paddingX={1}>
-            {showPill ? (
-              <Text color={P.accent}>▲ {newCount} new — g to jump</Text>
-            ) : paused ? (
-              <Text color={P.news}>
-                ⏸ paused · {buffer} buffered — space to resume
-              </Text>
-            ) : (
-              <Text> </Text>
-            )}
-          </Box>
-          <Box flexDirection="column" overflow="hidden">
-            {visible.length === 0 ? (
-              <Box paddingX={1}>
-                <Text color={P.faint}>
-                  {online
-                    ? "no posts match the current filters."
-                    : `cannot reach API at ${baseUrl}`}
+      {onFeedTab ? (
+        <Box height={bodyRows} width={columns}>
+          <Box flexDirection="column" width={feedWidth} height={bodyRows}>
+            <MarketStrip markets={markets} width={feedWidth} />
+            <Box height={1} paddingX={1}>
+              {showPill ? (
+                <Text color={P.accent}>▲ {newCount} new — g to jump</Text>
+              ) : paused ? (
+                <Text color={P.news}>
+                  ⏸ paused · {buffer} buffered — space to resume
                 </Text>
-              </Box>
-            ) : (
-              visible.map((card) => (
-                <FeedItem
-                  key={card.key}
-                  card={card}
-                  width={feedWidth}
-                  selected={card.key === selectedCard?.key}
-                  fresh={freshRef.current.has(card.lead.id)}
-                  now={now}
-                />
-              ))
-            )}
+              ) : (
+                <Text> </Text>
+              )}
+            </Box>
+            <Box flexDirection="column" overflow="hidden">
+              {visible.length === 0 ? (
+                <Box paddingX={1}>
+                  <Text color={P.faint}>
+                    {online
+                      ? "no posts match the current filters."
+                      : `cannot reach API at ${baseUrl}`}
+                  </Text>
+                </Box>
+              ) : (
+                visible.map((card) => (
+                  <FeedItem
+                    key={card.key}
+                    card={card}
+                    width={feedWidth}
+                    selected={card.key === selectedCard?.key}
+                    fresh={freshRef.current.has(card.lead.id)}
+                    now={now}
+                  />
+                ))
+              )}
+            </Box>
           </Box>
-        </Box>
 
-        {detailWidth > 0 && (
-          <DetailPane card={selectedCard} width={detailWidth} height={bodyRows} now={now} />
-        )}
-      </Box>
+          {detailWidth > 0 && (
+            <DetailPane card={selectedCard} width={detailWidth} height={bodyRows} now={now} />
+          )}
+        </Box>
+      ) : (
+        <MarketView
+          tab={MARKET_TABS[tabIdx - 1]}
+          markets={markets}
+          width={columns}
+          height={bodyRows}
+          now={now}
+        />
+      )}
 
       <StatusBar
         width={columns}

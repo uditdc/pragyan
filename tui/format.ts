@@ -24,6 +24,13 @@ export function fmtCount(n: number): string {
   return String(n);
 }
 
+export function fmtPrice(n: number): string {
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: n >= 1000 ? 0 : 2,
+  });
+}
+
 export function metricsLine(m: Metrics): string {
   return `♥ ${fmtCount(m.likes)}  ⇄ ${fmtCount(m.reposts)}  ↗ ${fmtCount(m.views)}`;
 }

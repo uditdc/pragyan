@@ -13,6 +13,8 @@
     maxDelayMs: 1800,
     settleTimeoutMs: 2500,
     settleIntervalMs: 150,
+    reloadOnDone: true,
+    breakMs: 300000,
   };
 
   const captured = new Map();
@@ -108,8 +110,25 @@
     }
 
     flush();
-    running = false;
     state = stopRequested ? "paused" : "done";
+    render();
+
+    if (state === "done" && config.autoScroll && config.reloadOnDone) {
+      state = "break";
+      const until = Date.now() + config.breakMs;
+      while (Date.now() < until && !stopRequested && config.autoScroll && config.reloadOnDone) {
+        breakRemainingMs = until - Date.now();
+        render();
+        await sleep(1000);
+      }
+      if (!stopRequested && config.autoScroll && config.reloadOnDone) {
+        location.reload();
+        return;
+      }
+      state = stopRequested ? "paused" : "done";
+    }
+
+    running = false;
     render();
   }
 
@@ -120,8 +139,9 @@
     if (running) stopRequested = true;
   }
 
-  const STATE_ICON = { idle: "⦿", scrolling: "▶", paused: "⏸", done: "✓", error: "✕" };
+  const STATE_ICON = { idle: "⦿", scrolling: "▶", paused: "⏸", done: "✓", break: "⏲", error: "✕" };
   let badge;
+  let breakRemainingMs = 0;
   function render(error) {
     if (!badge) {
       badge = document.createElement("div");
@@ -133,9 +153,14 @@
       badge.addEventListener("click", () => (running ? stopAuto() : startAuto()));
       document.documentElement.appendChild(badge);
     }
-    badge.style.color = error ? "#d08176" : running ? "#5cb6ac" : "#969cab";
+    badge.style.color = error ? "#d08176" : state === "break" ? "#c8a45c" : running ? "#5cb6ac" : "#969cab";
     const icon = error ? STATE_ICON.error : STATE_ICON[state];
-    badge.textContent = `xfeed ${icon} ${state} · seen ${captured.size} · sent ${sent} · queue ${pending.length}`;
+    let label = state;
+    if (state === "break") {
+      const s = Math.ceil(breakRemainingMs / 1000);
+      label = `break ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    }
+    badge.textContent = `xfeed ${icon} ${label} · seen ${captured.size} · sent ${sent} · queue ${pending.length}`;
   }
 
   const scheduleHarvest = debounce(harvest, 250);

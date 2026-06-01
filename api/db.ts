@@ -48,11 +48,29 @@ db.exec(`
     s_clickbait REAL,
     s_is_news INTEGER,
     s_news_confidence REAL,
-    scored_at TEXT
+    scored_at TEXT,
+    viewed_at TEXT,
+    expired_at TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_posts_harvested ON posts(harvested_at);
   CREATE INDEX IF NOT EXISTS idx_posts_scoring ON posts(kept, scored_at);
 `);
+
+const existingColumns = new Set(
+  db.prepare("PRAGMA table_info(posts)").all().map((c) => (c as { name: string }).name),
+);
+for (const [name, type] of [
+  ["viewed_at", "TEXT"],
+  ["expired_at", "TEXT"],
+] as const) {
+  if (!existingColumns.has(name)) {
+    db.exec(`ALTER TABLE posts ADD COLUMN ${name} ${type}`);
+  }
+}
+
+db.exec(
+  "CREATE INDEX IF NOT EXISTS idx_posts_lifecycle ON posts(expired_at, viewed_at, harvested_at)",
+);
 
 interface Row {
   id: string;
@@ -84,6 +102,8 @@ interface Row {
   s_is_news: number | null;
   s_news_confidence: number | null;
   scored_at: string | null;
+  viewed_at: string | null;
+  expired_at: string | null;
 }
 
 function rowToPost(r: Row): Post {
@@ -126,6 +146,8 @@ function rowToPost(r: Row): Post {
     clickbait_heuristic: r.clickbait_heuristic,
     scores,
     scored_at: r.scored_at,
+    viewed_at: r.viewed_at,
+    expired_at: r.expired_at,
   };
 }
 
@@ -139,13 +161,15 @@ const upsertStmt = db.prepare(`
     is_repost, is_quote, is_reply, is_ad, is_thread, thread_id, quoted_text,
     media_types, m_replies, m_reposts, m_likes, m_views, harvested_at,
     kept, drop_reason, clickbait_heuristic,
-    s_relevance, s_importance, s_clickbait, s_is_news, s_news_confidence, scored_at
+    s_relevance, s_importance, s_clickbait, s_is_news, s_news_confidence, scored_at,
+    viewed_at, expired_at
   ) VALUES (
     @id, @schema_version, @author_handle, @author_name, @text, @created_at, @url,
     @is_repost, @is_quote, @is_reply, @is_ad, @is_thread, @thread_id, @quoted_text,
     @media_types, @m_replies, @m_reposts, @m_likes, @m_views, @harvested_at,
     @kept, @drop_reason, @clickbait_heuristic,
-    @s_relevance, @s_importance, @s_clickbait, @s_is_news, @s_news_confidence, @scored_at
+    @s_relevance, @s_importance, @s_clickbait, @s_is_news, @s_news_confidence, @scored_at,
+    @viewed_at, @expired_at
   )
   ON CONFLICT(id) DO UPDATE SET
     m_replies = excluded.m_replies,
@@ -200,7 +224,40 @@ export function upsertPost(s: StoredPost): void {
     s_is_news: s.scores ? (s.scores.is_news ? 1 : 0) : null,
     s_news_confidence: s.scores?.news_confidence ?? null,
     scored_at: s.scored_at,
+    viewed_at: null,
+    expired_at: null,
   });
+}
+
+const markViewedStmt = db.prepare(
+  "UPDATE posts SET viewed_at = @now WHERE id = @id AND viewed_at IS NULL",
+);
+const dismissStmt = db.prepare("UPDATE posts SET expired_at = @now WHERE id = @id");
+const undismissStmt = db.prepare("UPDATE posts SET expired_at = NULL WHERE id = @id");
+
+function runOverIds(
+  stmt: Database.Statement,
+  ids: string[],
+  extra: Record<string, unknown>,
+): number {
+  let changes = 0;
+  const tx = db.transaction((list: string[]) => {
+    for (const id of list) changes += stmt.run({ id, ...extra }).changes;
+  });
+  tx(ids);
+  return changes;
+}
+
+export function markViewed(ids: string[], now: string): number {
+  return runOverIds(markViewedStmt, ids, { now });
+}
+
+export function dismiss(ids: string[], now: string): number {
+  return runOverIds(dismissStmt, ids, { now });
+}
+
+export function undismiss(ids: string[]): number {
+  return runOverIds(undismissStmt, ids, {});
 }
 
 export interface FeedQuery {
@@ -209,6 +266,7 @@ export interface FeedQuery {
   limit: number;
   news_only: boolean;
   include_dropped: boolean;
+  include_expired: boolean;
 }
 
 export interface FeedResult {
@@ -228,6 +286,15 @@ export function queryFeed(q: FeedQuery): FeedResult {
   const params: Record<string, unknown> = { limit: q.limit };
 
   if (!q.include_dropped) where.push("kept = 1");
+  if (!q.include_expired) {
+    const nowMs = Date.now();
+    const { viewed_ttl_min, unviewed_ttl_hours } = config.expiry;
+    where.push("expired_at IS NULL");
+    where.push("harvested_at > @unviewed_cutoff");
+    where.push("(viewed_at IS NULL OR viewed_at > @viewed_cutoff)");
+    params.unviewed_cutoff = new Date(nowMs - unviewed_ttl_hours * 3_600_000).toISOString();
+    params.viewed_cutoff = new Date(nowMs - viewed_ttl_min * 60_000).toISOString();
+  }
   if (q.news_only) where.push("s_is_news = 1");
   if (q.since !== null) {
     where.push("harvested_at > @since");

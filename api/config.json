@@ -23,5 +23,15 @@
     "max_concurrent_batches": 2,
     "poll_interval_ms": 5000
   },
+  "expiry": {
+    "mark_viewed_on": "select",
+    "viewed_ttl_min": 1,
+    "unviewed_ttl_hours": 48
+  },
+  "sources": {
+    "provider": "real",
+    "poll_interval_ms": 60000,
+    "polymarket_count": 5
+  },
   "server": { "host": "127.0.0.1", "port": 8787, "db_path": "api/feed.db" }
 }

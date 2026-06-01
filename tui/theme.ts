@@ -29,3 +29,7 @@ export function sourceColor(source: Source): string {
 export function sigil(source: Source): string {
   return source === "news" ? "*" : "X";
 }
+
+export function marketColor(up: boolean): string {
+  return up ? P.up : P.down;
+}

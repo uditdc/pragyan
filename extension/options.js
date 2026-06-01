@@ -4,6 +4,8 @@ const DEFAULTS = {
   autoScroll: true,
   scrollCap: 60,
   emptyStop: 3,
+  reloadOnDone: true,
+  breakMs: 300000,
 };
 
 const els = {
@@ -12,6 +14,8 @@ const els = {
   autoScroll: document.getElementById("autoScroll"),
   scrollCap: document.getElementById("scrollCap"),
   emptyStop: document.getElementById("emptyStop"),
+  reloadOnDone: document.getElementById("reloadOnDone"),
+  breakMin: document.getElementById("breakMin"),
 };
 const statusEl = document.getElementById("status");
 
@@ -21,6 +25,8 @@ chrome.storage.local.get(DEFAULTS).then((c) => {
   els.autoScroll.checked = c.autoScroll;
   els.scrollCap.value = c.scrollCap;
   els.emptyStop.value = c.emptyStop;
+  els.reloadOnDone.checked = c.reloadOnDone;
+  els.breakMin.value = c.breakMs / 60000;
 });
 
 const clamp = (v, lo, hi, fallback) =>
@@ -33,6 +39,8 @@ document.getElementById("save").addEventListener("click", async () => {
     autoScroll: els.autoScroll.checked,
     scrollCap: clamp(els.scrollCap.value, 1, 1000, DEFAULTS.scrollCap),
     emptyStop: clamp(els.emptyStop.value, 1, 50, DEFAULTS.emptyStop),
+    reloadOnDone: els.reloadOnDone.checked,
+    breakMs: clamp(els.breakMin.value, 0, 120, DEFAULTS.breakMs / 60000) * 60000,
   });
   statusEl.textContent = "saved";
   setTimeout(() => (statusEl.textContent = ""), 1500);
