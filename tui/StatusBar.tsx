@@ -34,7 +34,7 @@ export function StatusBar({ width, xCount, newsCount, buffer, stream }: Props) {
   const right: Seg[] = [
     { t: `${STREAM_LABEL[stream]}   `, c: STREAM_COLOR[stream] },
     {
-      t: "1-4 tabs · j/k move · enter open · x dismiss · u undo · space pause · t thr · n news · r refresh · q quit",
+      t: "1-5 tabs · j/k move · enter open · x dismiss · u undo · space pause · t thr · n news · ←/→ digest history · r refresh/regen · q quit",
       c: P.faint,
     },
   ];

@@ -1,4 +1,9 @@
 import type { Post } from "../shared/post.ts";
+import type {
+  SummariesResponse,
+  SummaryRecord,
+  SummaryResponse,
+} from "../shared/summary.ts";
 
 export interface FeedResponse {
   posts: Post[];
@@ -50,3 +55,24 @@ export const postDismiss = (baseUrl: string, ids: string[]) =>
   postIds(baseUrl, "/dismiss", ids);
 export const postUndismiss = (baseUrl: string, ids: string[]) =>
   postIds(baseUrl, "/undismiss", ids);
+
+export async function fetchSummary(baseUrl: string): Promise<SummaryResponse> {
+  const res = await fetch(`${baseUrl}/summary`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`summary ${res.status}`);
+  return (await res.json()) as SummaryResponse;
+}
+
+export async function fetchSummaries(baseUrl: string): Promise<SummariesResponse> {
+  const res = await fetch(`${baseUrl}/summaries`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`summaries ${res.status}`);
+  return (await res.json()) as SummariesResponse;
+}
+
+export async function regenerateSummary(baseUrl: string): Promise<SummaryRecord | null> {
+  const res = await fetch(`${baseUrl}/summary/regenerate`, {
+    method: "POST",
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw new Error(`regenerate ${res.status}`);
+  return (await res.json()) as SummaryRecord | null;
+}

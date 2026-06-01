@@ -3,3 +3,4 @@ api/*.db
 api/*.db-shm
 api/*.db-wal
 *.log
+.env

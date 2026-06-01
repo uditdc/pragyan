@@ -25,6 +25,12 @@ export interface Config {
     viewed_ttl_min: number;
     unviewed_ttl_hours: number;
   };
+  summary: {
+    poll_interval_ms: number;
+    max_posts: number;
+    min_items: number;
+    retention: number;
+  };
   sources: {
     provider: "mock" | "real";
     poll_interval_ms: number;

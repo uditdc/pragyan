@@ -8,6 +8,7 @@ import type {
   Scores,
 } from "../shared/post.ts";
 import { SCHEMA_VERSION } from "../shared/post.ts";
+import type { Digest, SummaryRecord, SummaryStatus } from "../shared/summary.ts";
 import { config } from "./config.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -54,6 +55,20 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_posts_harvested ON posts(harvested_at);
   CREATE INDEX IF NOT EXISTS idx_posts_scoring ON posts(kept, scored_at);
+
+  CREATE TABLE IF NOT EXISTS summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    generated_at TEXT NOT NULL,
+    window_start TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    item_count INTEGER NOT NULL,
+    source_counts TEXT NOT NULL,
+    gen_ms INTEGER,
+    model TEXT,
+    status TEXT NOT NULL,
+    digest TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_summaries_generated ON summaries(generated_at);
 `);
 
 const existingColumns = new Set(
@@ -322,4 +337,119 @@ export function queryFeed(q: FeedQuery): FeedResult {
   );
 
   return { posts, next_since };
+}
+
+const postsSinceStmt = db.prepare<{ since: string | null; limit: number }, Row>(
+  `SELECT * FROM posts
+   WHERE kept = 1 AND (@since IS NULL OR harvested_at > @since)
+   ORDER BY harvested_at DESC
+   LIMIT @limit`,
+);
+
+export function getPostsSince(since: string | null, limit: number): Post[] {
+  return postsSinceStmt.all({ since, limit }).map(rowToPost);
+}
+
+const countNewSinceStmt = db.prepare<{ since: string }, { n: number }>(
+  "SELECT COUNT(*) AS n FROM posts WHERE kept = 1 AND harvested_at > @since",
+);
+
+export function countNewSince(since: string): number {
+  return countNewSinceStmt.get({ since })?.n ?? 0;
+}
+
+interface SummaryRow {
+  id: number;
+  generated_at: string;
+  window_start: string;
+  window_end: string;
+  item_count: number;
+  source_counts: string;
+  gen_ms: number | null;
+  model: string | null;
+  status: string;
+  digest: string;
+}
+
+function rowToSummary(r: SummaryRow): SummaryRecord {
+  return {
+    id: r.id,
+    generated_at: r.generated_at,
+    window_start: r.window_start,
+    window_end: r.window_end,
+    item_count: r.item_count,
+    source_counts: JSON.parse(r.source_counts) as SummaryRecord["source_counts"],
+    gen_ms: r.gen_ms,
+    model: r.model,
+    status: r.status as SummaryStatus,
+    digest: JSON.parse(r.digest) as Digest,
+  };
+}
+
+const insertSummaryStmt = db.prepare(`
+  INSERT INTO summaries (
+    generated_at, window_start, window_end, item_count,
+    source_counts, gen_ms, model, status, digest
+  ) VALUES (
+    @generated_at, @window_start, @window_end, @item_count,
+    @source_counts, @gen_ms, @model, @status, @digest
+  )
+`);
+
+const getSummaryStmt = db.prepare<[number], SummaryRow>(
+  "SELECT * FROM summaries WHERE id = ?",
+);
+
+export interface NewSummary {
+  generated_at: string;
+  window_start: string;
+  window_end: string;
+  item_count: number;
+  source_counts: SummaryRecord["source_counts"];
+  gen_ms: number | null;
+  model: string | null;
+  status: SummaryStatus;
+  digest: Digest;
+}
+
+export function insertSummary(s: NewSummary): SummaryRecord {
+  const info = insertSummaryStmt.run({
+    generated_at: s.generated_at,
+    window_start: s.window_start,
+    window_end: s.window_end,
+    item_count: s.item_count,
+    source_counts: JSON.stringify(s.source_counts),
+    gen_ms: s.gen_ms,
+    model: s.model,
+    status: s.status,
+    digest: JSON.stringify(s.digest),
+  });
+  return rowToSummary(getSummaryStmt.get(Number(info.lastInsertRowid))!);
+}
+
+const latestSummaryStmt = db.prepare<[], SummaryRow>(
+  "SELECT * FROM summaries ORDER BY generated_at DESC, id DESC LIMIT 1",
+);
+
+export function getLatestSummary(): SummaryRecord | null {
+  const row = latestSummaryStmt.get();
+  return row ? rowToSummary(row) : null;
+}
+
+const summariesStmt = db.prepare<[number], SummaryRow>(
+  "SELECT * FROM summaries ORDER BY generated_at DESC, id DESC LIMIT ?",
+);
+
+export function getSummaries(limit: number): SummaryRecord[] {
+  return summariesStmt.all(limit).map(rowToSummary);
+}
+
+const pruneSummariesStmt = db.prepare(
+  `DELETE FROM summaries WHERE id NOT IN (
+     SELECT id FROM summaries ORDER BY generated_at DESC, id DESC LIMIT @keep
+   )`,
+);
+
+export function pruneSummaries(keep: number): number {
+  return pruneSummariesStmt.run({ keep }).changes;
 }

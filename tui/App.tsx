@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdin } from "ink";
 import type { Post } from "../shared/post.ts";
-import { fetchFeed, postViewed, postDismiss, postUndismiss } from "./api.ts";
+import {
+  fetchFeed,
+  postViewed,
+  postDismiss,
+  postUndismiss,
+  fetchSummaries,
+  regenerateSummary,
+} from "./api.ts";
+import type { SummaryRecord } from "../shared/summary.ts";
 import { consolidateThreads } from "./threads.ts";
 import { pickWindow } from "./layout.ts";
 import { fmtClock } from "./format.ts";
 import { sourceOf, P } from "./theme.ts";
-import { TopBar } from "./TopBar.tsx";
+import { TopBar, TABS } from "./TopBar.tsx";
+import { SummaryView } from "./SummaryView.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { FeedItem } from "./FeedItem.tsx";
 import { DetailPane } from "./DetailPane.tsx";
@@ -57,6 +66,10 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const [now, setNow] = useState(Date.now());
   const [tabIdx, setTabIdx] = useState(0);
   const [markets, setMarkets] = useState<MarketsSnapshot | null>(null);
+  const [summaries, setSummaries] = useState<SummaryRecord[]>([]);
+  const [summaryNew, setSummaryNew] = useState(0);
+  const [summaryIdx, setSummaryIdx] = useState(0);
+  const [regenerating, setRegenerating] = useState(false);
 
   const seenRef = useRef<Set<string>>(new Set());
   const freshRef = useRef<Set<string>>(new Set());
@@ -105,18 +118,31 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     }
   }, [baseUrl]);
 
+  const loadSummary = useCallback(async () => {
+    try {
+      const res = await fetchSummaries(baseUrl);
+      setSummaries(res.summaries);
+      setSummaryNew(res.new_since);
+    } catch {
+      /* keep last digest */
+    }
+  }, [baseUrl]);
+
   useEffect(() => {
     void load();
     void loadMarkets();
+    void loadSummary();
     const poll = setInterval(() => void load(), pollMs);
     const marketPoll = setInterval(() => void loadMarkets(), 10_000);
+    const summaryPoll = setInterval(() => void loadSummary(), 30_000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       clearInterval(poll);
       clearInterval(marketPoll);
+      clearInterval(summaryPoll);
       clearInterval(clock);
     };
-  }, [load, loadMarkets, pollMs]);
+  }, [load, loadMarkets, loadSummary, pollMs]);
 
   useEffect(() => {
     const flushViewed = () => {
@@ -188,17 +214,35 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         exit();
         return;
       }
-      if (input >= "1" && input <= "4") {
-        setTabIdx(Number(input) - 1);
+      if (input >= "1" && input <= "9") {
+        const n = Number(input) - 1;
+        if (n < TABS.length) setTabIdx(n);
         return;
       }
       if (key.tab) {
-        setTabIdx((i) => (key.shift ? (i + 3) % 4 : (i + 1) % 4));
+        const len = TABS.length;
+        setTabIdx((i) => (key.shift ? (i + len - 1) % len : (i + 1) % len));
         return;
       }
       if (input === "r") {
-        void load();
-        void loadMarkets();
+        if (tabIdx === 4) {
+          setRegenerating(true);
+          setSummaryIdx(0);
+          void regenerateSummary(baseUrl)
+            .then(loadSummary)
+            .finally(() => setRegenerating(false));
+        } else {
+          void load();
+          void loadMarkets();
+        }
+        return;
+      }
+      if (tabIdx === 4) {
+        if (input === "h" || key.leftArrow) {
+          setSummaryIdx((i) => Math.min(summaries.length - 1, i + 1));
+        } else if (input === "l" || key.rightArrow) {
+          setSummaryIdx((i) => Math.max(0, i - 1));
+        }
         return;
       }
       if (tabIdx !== 0) return;
@@ -305,6 +349,17 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
             <DetailPane card={selectedCard} width={detailWidth} height={bodyRows} now={now} />
           )}
         </Box>
+      ) : tabIdx === 4 ? (
+        <SummaryView
+          summary={summaries[Math.min(summaryIdx, summaries.length - 1)] ?? null}
+          newSince={summaryNew}
+          index={summaries.length ? Math.min(summaryIdx, summaries.length - 1) : 0}
+          total={summaries.length}
+          regenerating={regenerating}
+          width={columns}
+          height={bodyRows}
+          now={now}
+        />
       ) : (
         <MarketView
           tab={MARKET_TABS[tabIdx - 1]}

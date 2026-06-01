@@ -10,8 +10,12 @@ import {
   markViewed,
   dismiss,
   undismiss,
+  getLatestSummary,
+  getSummaries,
+  countNewSince,
 } from "./db.ts";
 import { getSnapshot, startMarkets } from "./markets.ts";
+import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -104,7 +108,30 @@ app.get("/markets", (_req, res) => {
   res.json(getSnapshot());
 });
 
+app.get("/summary", (_req, res) => {
+  const summary = getLatestSummary();
+  res.json({
+    summary,
+    new_since: summary ? countNewSince(summary.window_end) : 0,
+  });
+});
+
+app.get("/summaries", (req, res) => {
+  const limit = Math.min(100, Number(req.query.limit ?? 50));
+  const summaries = getSummaries(limit);
+  res.json({
+    summaries,
+    new_since: summaries.length > 0 ? countNewSince(summaries[0].window_end) : 0,
+  });
+});
+
+app.post("/summary/regenerate", async (_req, res) => {
+  await generateSummary();
+  res.json(getLatestSummary());
+});
+
 startMarkets();
+startSummary();
 
 app.listen(config.server.port, config.server.host, () => {
   console.log(
