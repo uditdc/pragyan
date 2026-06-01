@@ -25,8 +25,6 @@ import type { MarketsSnapshot } from "../shared/market.ts";
 import { MarketStrip } from "./MarketStrip.tsx";
 import { MarketView, type MarketTab } from "./MarketView.tsx";
 
-const MARKET_TABS: MarketTab[] = ["crypto", "markets", "polymarket"];
-
 const THRESHOLDS = [0, 0.2, 0.4, 0.6];
 
 interface Props {
@@ -64,7 +62,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const [online, setOnline] = useState(false);
   const [buffer, setBuffer] = useState(0);
   const [now, setNow] = useState(Date.now());
-  const [tabIdx, setTabIdx] = useState(0);
+  const [tabIdx, setTabIdx] = useState(TABS.indexOf("feed"));
   const [markets, setMarkets] = useState<MarketsSnapshot | null>(null);
   const [summaries, setSummaries] = useState<SummaryRecord[]>([]);
   const [summaryNew, setSummaryNew] = useState(0);
@@ -170,7 +168,8 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     if (!cards.some((c) => c.key === selectedId)) setSelectedId(cards[0].key);
   }, [cards, selectedId]);
 
-  const onFeedTab = tabIdx === 0;
+  const onFeedTab = TABS[tabIdx] === "feed";
+  const onSummaryTab = TABS[tabIdx] === "summary";
   const detailWidth = onFeedTab && columns >= 80 ? Math.min(46, Math.floor(columns * 0.36)) : 0;
   const feedWidth = columns - detailWidth;
   const bodyRows = Math.max(3, rows - 2);
@@ -225,7 +224,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         return;
       }
       if (input === "r") {
-        if (tabIdx === 4) {
+        if (onSummaryTab) {
           setRegenerating(true);
           setSummaryIdx(0);
           void regenerateSummary(baseUrl)
@@ -237,7 +236,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         }
         return;
       }
-      if (tabIdx === 4) {
+      if (onSummaryTab) {
         if (input === "h" || key.leftArrow) {
           setSummaryIdx((i) => Math.min(summaries.length - 1, i + 1));
         } else if (input === "l" || key.rightArrow) {
@@ -245,7 +244,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         }
         return;
       }
-      if (tabIdx !== 0) return;
+      if (!onFeedTab) return;
 
       if (input === "j" || key.downArrow) {
         select(selectedIndex + 1);
@@ -349,7 +348,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
             <DetailPane card={selectedCard} width={detailWidth} height={bodyRows} now={now} />
           )}
         </Box>
-      ) : tabIdx === 4 ? (
+      ) : onSummaryTab ? (
         <SummaryView
           summary={summaries[Math.min(summaryIdx, summaries.length - 1)] ?? null}
           newSince={summaryNew}
@@ -362,7 +361,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         />
       ) : (
         <MarketView
-          tab={MARKET_TABS[tabIdx - 1]}
+          tab={TABS[tabIdx] as MarketTab}
           markets={markets}
           width={columns}
           height={bodyRows}

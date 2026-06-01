@@ -1,7 +1,7 @@
 import { P } from "./theme.ts";
 import { Bar, type Seg } from "./Bar.tsx";
 
-export const TABS = ["feed", "crypto", "markets", "polymarket", "summary"] as const;
+export const TABS = ["summary", "feed", "crypto", "markets", "polymarket"] as const;
 
 interface Props {
   width: number;
@@ -23,7 +23,7 @@ export function TopBar({ width, online, count, newsOnly, minScore, clock, tabIdx
     left.push({ t: `${i + 1} `, c: active ? P.accent : P.faint });
     left.push({ t: `${name}  `, c: active ? P.fg : P.faint, bold: active });
   });
-  if (tabIdx === 0) {
+  if (TABS[tabIdx] === "feed") {
     left.push({ t: " all ", c: newsOnly ? P.faint : P.fg });
     left.push({ t: "news ", c: newsOnly ? P.news : P.faint });
     left.push({ t: `· min ${minScore.toFixed(1)}`, c: P.faint });
