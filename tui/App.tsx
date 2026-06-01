@@ -16,7 +16,7 @@ import type { MarketsSnapshot } from "../shared/market.ts";
 import { MarketStrip } from "./MarketStrip.tsx";
 import { MarketView, type MarketTab } from "./MarketView.tsx";
 
-const MARKET_TABS: MarketTab[] = ["crypto", "nifty", "polymarket"];
+const MARKET_TABS: MarketTab[] = ["crypto", "markets", "polymarket"];
 
 const THRESHOLDS = [0, 0.2, 0.4, 0.6];
 

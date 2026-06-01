@@ -19,7 +19,6 @@ export function MarketStrip({
   }
   const btc = markets.crypto[0];
   const nifty = markets.indices[0];
-  const pm = markets.polymarkets[0];
   const sep = <Text color={P.faint}> · </Text>;
 
   return (
@@ -28,14 +27,6 @@ export function MarketStrip({
         {btc ? <InlineTicker t={btc} /> : null}
         {btc && nifty ? sep : null}
         {nifty ? <InlineTicker t={nifty} /> : null}
-        {pm ? (
-          <Text>
-            {sep}
-            <Text color={P.log}>◆ </Text>
-            <Text color={P.dim}>{pm.question} </Text>
-            <Text color={P.accent}>{Math.round(pm.probability * 100)}%</Text>
-          </Text>
-        ) : null}
       </Text>
     </Box>
   );

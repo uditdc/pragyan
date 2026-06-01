@@ -5,11 +5,11 @@ import { Ticker } from "./Ticker.tsx";
 import { PolymarketRow } from "./PolymarketRow.tsx";
 import { fmtClock } from "./format.ts";
 
-export type MarketTab = "crypto" | "nifty" | "polymarket";
+export type MarketTab = "crypto" | "markets" | "polymarket";
 
 const META: Record<MarketTab, { title: string; color: string }> = {
-  crypto: { title: "CRYPTO", color: P.x },
-  nifty: { title: "NIFTY", color: P.news },
+  crypto: { title: "CRYPTO — top by market cap", color: P.x },
+  markets: { title: "MARKETS — global indices & commodities", color: P.news },
   polymarket: { title: "POLYMARKET — top by 24h volume", color: P.log },
 };
 

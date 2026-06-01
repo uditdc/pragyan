@@ -80,28 +80,62 @@ function mockProvider(): MarketsSnapshot {
 // ── real providers (keyless; selected via config.sources.provider="real") ───
 const UA = "xfeed/0.1 (personal use)";
 
-async function fetchBtc(now: string): Promise<Ticker[]> {
-  const res = await fetch(
-    "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true",
-    { signal: AbortSignal.timeout(6000) },
-  );
-  const data = (await res.json()) as { bitcoin: { usd: number; usd_24h_change: number } };
-  const price = data.bitcoin.usd;
-  const pct = data.bitcoin.usd_24h_change;
-  const prev = price / (1 + pct / 100);
-  return [ticker("BTC", "Bitcoin", price, prev, "USD", now)];
+interface CoinMarket {
+  symbol: string;
+  name: string;
+  current_price: number;
+  price_change_percentage_24h: number | null;
 }
 
-async function fetchNifty(now: string): Promise<Ticker[]> {
-  const res = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI", {
+async function fetchCrypto(now: string): Promise<Ticker[]> {
+  const n = config.sources.crypto_count;
+  const res = await fetch(
+    `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${n}&page=1&price_change_percentage=24h`,
+    { signal: AbortSignal.timeout(6000) },
+  );
+  const data = (await res.json()) as CoinMarket[];
+  return data.map((c) => {
+    const pct = c.price_change_percentage_24h ?? 0;
+    const prev = c.current_price / (1 + pct / 100);
+    return ticker(c.symbol.toUpperCase(), c.name, c.current_price, prev, "USD", now);
+  });
+}
+
+// Global indices and commodities with public, keyless Yahoo Finance chart data.
+// NIFTY stays first so the always-on MarketStrip keeps showing it.
+const INDEX_SYMBOLS = [
+  { label: "NIFTY 50", yahoo: "%5ENSEI" },
+  { label: "SENSEX", yahoo: "%5EBSESN" },
+  { label: "S&P 500", yahoo: "%5EGSPC" },
+  { label: "NASDAQ", yahoo: "%5EIXIC" },
+  { label: "DOW", yahoo: "%5EDJI" },
+  { label: "FTSE 100", yahoo: "%5EFTSE" },
+  { label: "NIKKEI", yahoo: "%5EN225" },
+  { label: "DAX", yahoo: "%5EGDAXI" },
+  { label: "GOLD", yahoo: "GC%3DF" },
+  { label: "CRUDE", yahoo: "CL%3DF" },
+] as const;
+
+async function fetchIndex(sym: (typeof INDEX_SYMBOLS)[number], now: string): Promise<Ticker> {
+  const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym.yahoo}`, {
     headers: { "User-Agent": UA },
     signal: AbortSignal.timeout(6000),
   });
   const data = (await res.json()) as {
-    chart: { result: { meta: { regularMarketPrice: number; previousClose: number; currency: string; shortName: string } }[] };
+    chart: { result?: { meta: { regularMarketPrice: number; previousClose: number; currency: string } }[] };
   };
-  const meta = data.chart.result[0].meta;
-  return [ticker("NIFTY 50", meta.shortName, meta.regularMarketPrice, meta.previousClose, meta.currency, now)];
+  const meta = data.chart.result?.[0]?.meta;
+  if (!meta) throw new Error(`no data for ${sym.label}`);
+  return ticker(sym.label, sym.label, meta.regularMarketPrice, meta.previousClose, meta.currency, now);
+}
+
+async function fetchIndices(now: string): Promise<Ticker[]> {
+  const settled = await Promise.allSettled(INDEX_SYMBOLS.map((s) => fetchIndex(s, now)));
+  const tickers = settled
+    .filter((r): r is PromiseFulfilledResult<Ticker> => r.status === "fulfilled")
+    .map((r) => r.value);
+  if (tickers.length === 0) throw new Error("indices unavailable");
+  return tickers;
 }
 
 interface GammaMarket {
@@ -184,8 +218,8 @@ async function realProvider(prev: MarketsSnapshot): Promise<MarketsSnapshot> {
     }
   };
   const [crypto, indices, polymarkets] = await Promise.all([
-    settle(fetchBtc(now), prev.crypto),
-    settle(fetchNifty(now), prev.indices),
+    settle(fetchCrypto(now), prev.crypto),
+    settle(fetchIndices(now), prev.indices),
     settle(fetchPolymarkets(now), prev.polymarkets),
   ]);
   return { crypto, indices, polymarkets, fetched_at: now, stale };

@@ -28,6 +28,7 @@ export interface Config {
   sources: {
     provider: "mock" | "real";
     poll_interval_ms: number;
+    crypto_count: number;
     polymarket_count: number;
   };
   server: { host: string; port: number; db_path: string };

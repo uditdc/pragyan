@@ -31,7 +31,8 @@
   "sources": {
     "provider": "real",
     "poll_interval_ms": 60000,
-    "polymarket_count": 5
+    "crypto_count": 20,
+    "polymarket_count": 20
   },
   "server": { "host": "127.0.0.1", "port": 8787, "db_path": "api/feed.db" }
 }
