@@ -1,0 +1,28 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+export interface Config {
+  interest_topics: string[];
+  weights: { importance: number; relevance: number; clickbait: number };
+  gates: { min_news_confidence: number; news_only_default: boolean };
+  prefilter: {
+    engagement_floor: number;
+    drop_replies: boolean;
+    min_text_len: number;
+    clickbait_phrases: string[];
+  };
+  scoring: {
+    model: string;
+    batch_size: number;
+    max_concurrent_batches: number;
+    poll_interval_ms: number;
+  };
+  server: { host: string; port: number; db_path: string };
+}
+
+export const config: Config = JSON.parse(
+  readFileSync(join(here, "config.json"), "utf8"),
+);

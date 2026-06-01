@@ -1,0 +1,27 @@
+{
+  "interest_topics": ["technology", "ai", "science", "world news", "economics"],
+  "weights": { "importance": 0.5, "relevance": 0.4, "clickbait": 0.3 },
+  "gates": { "min_news_confidence": 0.5, "news_only_default": false },
+  "prefilter": {
+    "engagement_floor": 5,
+    "drop_replies": true,
+    "min_text_len": 15,
+    "clickbait_phrases": [
+      "you won't believe",
+      "wait for it",
+      "rt if",
+      "🧵",
+      "👇",
+      "thread:",
+      "a thread",
+      "breaking:"
+    ]
+  },
+  "scoring": {
+    "model": "claude-haiku-4-5",
+    "batch_size": 15,
+    "max_concurrent_batches": 2,
+    "poll_interval_ms": 5000
+  },
+  "server": { "host": "127.0.0.1", "port": 8787, "db_path": "api/feed.db" }
+}
