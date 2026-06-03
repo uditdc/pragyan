@@ -9,6 +9,7 @@ interface Props {
   newsCount: number;
   buffer: number;
   stream: Stream;
+  down: string[];
 }
 
 const STREAM_LABEL: Record<Stream, string> = {
@@ -23,18 +24,21 @@ const STREAM_COLOR: Record<Stream, string> = {
   paused: P.news,
 };
 
-export function StatusBar({ width, xCount, newsCount, buffer, stream }: Props) {
-  const left: Seg[] = [
+export function StatusBar({ width, xCount, newsCount, buffer, stream, down }: Props) {
+  const left: Seg[] = down.length
+    ? [{ t: `⚠ ${down.length} DOWN: ${down.join(", ")}   `, c: P.down, bold: true }]
+    : [];
+  left.push(
     { t: "X ", c: P.x },
     { t: `${xCount}   `, c: P.dim },
     { t: "news ", c: P.news },
     { t: `${newsCount}   `, c: P.dim },
     { t: `buffer ${buffer}`, c: P.faint },
-  ];
+  );
   const right: Seg[] = [
     { t: `${STREAM_LABEL[stream]}   `, c: STREAM_COLOR[stream] },
     {
-      t: "1-5 tabs · j/k move · enter open · x dismiss · u undo · space pause · t thr · n news · ←/→ digest history · r refresh/regen · q quit",
+      t: "1-6 tabs · j/k move · enter open · x dismiss · u undo · space pause · t thr · n news · ←/→ digest history · r refresh/regen · q quit",
       c: P.faint,
     },
   ];

@@ -1,7 +1,7 @@
 import { P } from "./theme.ts";
 import { Bar, type Seg } from "./Bar.tsx";
 
-export const TABS = ["summary", "feed", "crypto", "markets", "polymarket"] as const;
+export const TABS = ["summary", "feed", "crypto", "markets", "polymarket", "uptime"] as const;
 
 interface Props {
   width: number;

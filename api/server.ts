@@ -15,6 +15,7 @@ import {
   countNewSince,
 } from "./db.ts";
 import { getSnapshot, startMarkets } from "./markets.ts";
+import { getUptimeSnapshot, startUptime, checkNow } from "./uptime.ts";
 import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
 
 const app = express();
@@ -108,6 +109,14 @@ app.get("/markets", (_req, res) => {
   res.json(getSnapshot());
 });
 
+app.get("/uptime", (_req, res) => {
+  res.json(getUptimeSnapshot());
+});
+
+app.post("/uptime/check", async (_req, res) => {
+  res.json(await checkNow());
+});
+
 app.get("/summary", (_req, res) => {
   const summary = getLatestSummary();
   res.json({
@@ -137,4 +146,5 @@ app.listen(config.server.port, config.server.host, () => {
   console.log(
     `x-feed-filter API on http://${config.server.host}:${config.server.port}`,
   );
+  startUptime();
 });

@@ -37,6 +37,12 @@ export interface Config {
     crypto_count: number;
     polymarket_count: number;
   };
+  monitors: {
+    interval_ms: number;
+    timeout_ms: number;
+    history: number;
+    services: { name: string; url: string }[];
+  };
   server: { host: string; port: number; db_path: string };
 }
 

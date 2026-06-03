@@ -24,6 +24,9 @@ import { fetchMarkets } from "./markets.ts";
 import type { MarketsSnapshot } from "../shared/market.ts";
 import { MarketStrip } from "./MarketStrip.tsx";
 import { MarketView, type MarketTab } from "./MarketView.tsx";
+import { UptimeView } from "./UptimeView.tsx";
+import { fetchUptime, recheckUptime } from "./uptime.ts";
+import type { UptimeSnapshot } from "../shared/uptime.ts";
 
 const THRESHOLDS = [0, 0.2, 0.4, 0.6];
 
@@ -64,6 +67,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const [now, setNow] = useState(Date.now());
   const [tabIdx, setTabIdx] = useState(TABS.indexOf("feed"));
   const [markets, setMarkets] = useState<MarketsSnapshot | null>(null);
+  const [uptime, setUptime] = useState<UptimeSnapshot | null>(null);
   const [summaries, setSummaries] = useState<SummaryRecord[]>([]);
   const [summaryNew, setSummaryNew] = useState(0);
   const [summaryIdx, setSummaryIdx] = useState(0);
@@ -116,6 +120,14 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     }
   }, [baseUrl]);
 
+  const loadUptime = useCallback(async () => {
+    try {
+      setUptime(await fetchUptime(baseUrl));
+    } catch {
+      /* keep last snapshot */
+    }
+  }, [baseUrl]);
+
   const loadSummary = useCallback(async () => {
     try {
       const res = await fetchSummaries(baseUrl);
@@ -129,18 +141,21 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   useEffect(() => {
     void load();
     void loadMarkets();
+    void loadUptime();
     void loadSummary();
     const poll = setInterval(() => void load(), pollMs);
     const marketPoll = setInterval(() => void loadMarkets(), 10_000);
+    const uptimePoll = setInterval(() => void loadUptime(), 15_000);
     const summaryPoll = setInterval(() => void loadSummary(), 30_000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       clearInterval(poll);
       clearInterval(marketPoll);
+      clearInterval(uptimePoll);
       clearInterval(summaryPoll);
       clearInterval(clock);
     };
-  }, [load, loadMarkets, loadSummary, pollMs]);
+  }, [load, loadMarkets, loadUptime, loadSummary, pollMs]);
 
   useEffect(() => {
     const flushViewed = () => {
@@ -170,6 +185,12 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
 
   const onFeedTab = TABS[tabIdx] === "feed";
   const onSummaryTab = TABS[tabIdx] === "summary";
+  const onUptimeTab = TABS[tabIdx] === "uptime";
+
+  const downServices = useMemo(
+    () => (uptime?.monitors ?? []).filter((m) => m.state === "down").map((m) => m.name),
+    [uptime],
+  );
   const detailWidth = onFeedTab && columns >= 80 ? Math.min(46, Math.floor(columns * 0.36)) : 0;
   const feedWidth = columns - detailWidth;
   const bodyRows = Math.max(3, rows - 2);
@@ -230,6 +251,8 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           void regenerateSummary(baseUrl)
             .then(loadSummary)
             .finally(() => setRegenerating(false));
+        } else if (onUptimeTab) {
+          void recheckUptime(baseUrl).then(setUptime).catch(() => {});
         } else {
           void load();
           void loadMarkets();
@@ -359,6 +382,8 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           height={bodyRows}
           now={now}
         />
+      ) : onUptimeTab ? (
+        <UptimeView snapshot={uptime} width={columns} height={bodyRows} now={now} />
       ) : (
         <MarketView
           tab={TABS[tabIdx] as MarketTab}
@@ -375,6 +400,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         newsCount={newsCount}
         buffer={buffer}
         stream={stream}
+        down={downServices}
       />
     </Box>
   );
