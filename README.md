@@ -23,6 +23,8 @@ renderer. See [`docs/PRD.md`](docs/PRD.md) for the full design.
 
 ## Layout
 
+<img width="935" height="545" alt="image" src="https://github.com/user-attachments/assets/2a296c14-8310-4ce8-b597-aff266fe8d88" />
+
 | Path         | What                                                                 |
 |--------------|----------------------------------------------------------------------|
 | `shared/`    | The `Post` data contract, imported by both api and tui.              |
