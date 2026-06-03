@@ -29,7 +29,6 @@
     "unviewed_ttl_hours": 48
   },
   "summary": {
-    "poll_interval_ms": 1800000,
     "max_posts": 200,
     "min_items": 4,
     "retention": 50

@@ -178,5 +178,4 @@ export async function tick(): Promise<void> {
 
 export function startSummary(): void {
   void tick();
-  setInterval(() => void tick(), config.summary.poll_interval_ms);
 }

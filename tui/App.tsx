@@ -23,7 +23,7 @@ import { openInBrowser } from "./browser.ts";
 import { fetchMarkets } from "./markets.ts";
 import type { MarketsSnapshot } from "../shared/market.ts";
 import { MarketStrip } from "./MarketStrip.tsx";
-import { MarketView, type MarketTab } from "./MarketView.tsx";
+import { MarketView } from "./MarketView.tsx";
 import { UptimeView } from "./UptimeView.tsx";
 import { fetchUptime, recheckUptime } from "./uptime.ts";
 import type { UptimeSnapshot } from "../shared/uptime.ts";
@@ -318,15 +318,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
-      <TopBar
-        width={columns}
-        online={online}
-        count={cards.length}
-        newsOnly={newsOnly}
-        minScore={minScore}
-        clock={fmtClock(now)}
-        tabIdx={tabIdx}
-      />
+      <TopBar width={columns} online={online} clock={fmtClock(now)} tabIdx={tabIdx} />
 
       {onFeedTab ? (
         <Box height={bodyRows} width={columns}>
@@ -385,13 +377,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       ) : onUptimeTab ? (
         <UptimeView snapshot={uptime} width={columns} height={bodyRows} now={now} />
       ) : (
-        <MarketView
-          tab={TABS[tabIdx] as MarketTab}
-          markets={markets}
-          width={columns}
-          height={bodyRows}
-          now={now}
-        />
+        <MarketView markets={markets} width={columns} height={bodyRows} now={now} />
       )}
 
       <StatusBar
@@ -401,6 +387,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         buffer={buffer}
         stream={stream}
         down={downServices}
+        filter={onFeedTab ? { newsOnly, minScore } : null}
       />
     </Box>
   );

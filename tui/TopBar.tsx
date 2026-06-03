@@ -1,38 +1,52 @@
 import { P } from "./theme.ts";
 import { Bar, type Seg } from "./Bar.tsx";
 
-export const TABS = ["summary", "feed", "crypto", "markets", "polymarket", "uptime"] as const;
+export const TABS = ["summary", "feed", "markets", "uptime"] as const;
+
+const TITLE_STOPS = [P.accent, P.x, P.log];
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function gradient(text: string, stops: string[]): Seg[] {
+  const rgb = stops.map(hexToRgb);
+  const chars = [...text];
+  return chars.map((ch, i) => {
+    const span = (chars.length > 1 ? i / (chars.length - 1) : 0) * (rgb.length - 1);
+    const lo = Math.min(rgb.length - 2, Math.floor(span));
+    const f = span - lo;
+    const c = [0, 1, 2]
+      .map((k) => Math.round(rgb[lo][k] + (rgb[lo + 1][k] - rgb[lo][k]) * f))
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("");
+    return { t: ch, c: `#${c}`, bold: true };
+  });
+}
 
 interface Props {
   width: number;
   online: boolean;
-  count: number;
-  newsOnly: boolean;
-  minScore: number;
   clock: string;
   tabIdx: number;
 }
 
-export function TopBar({ width, online, count, newsOnly, minScore, clock, tabIdx }: Props) {
-  const left: Seg[] = [
-    { t: "◆ ", c: P.accent },
-    { t: "XFEED  ", c: P.white, bold: true },
-  ];
+export function TopBar({ width, online, clock, tabIdx }: Props) {
+  const left = gradient("PRAGYAN", TITLE_STOPS);
+
+  const center: Seg[] = [];
   TABS.forEach((name, i) => {
     const active = i === tabIdx;
-    left.push({ t: `${i + 1} `, c: active ? P.accent : P.faint });
-    left.push({ t: `${name}  `, c: active ? P.fg : P.faint, bold: active });
+    center.push({ t: `${i + 1} `, c: active ? P.accent : P.faint });
+    center.push({ t: `${name}  `, c: active ? P.fg : P.faint, bold: active });
   });
-  if (TABS[tabIdx] === "feed") {
-    left.push({ t: " all ", c: newsOnly ? P.faint : P.fg });
-    left.push({ t: "news ", c: newsOnly ? P.news : P.faint });
-    left.push({ t: `· min ${minScore.toFixed(1)}`, c: P.faint });
-  }
 
   const right: Seg[] = [
-    { t: "● ", c: online ? P.accent : P.down },
-    { t: online ? "LIVE " : "OFFLINE ", c: P.dim },
-    { t: `${count} · ${clock}`, c: P.faint },
+    { t: `${clock}   `, c: P.faint },
+    { t: online ? "● " : "○ ", c: online ? P.accent : P.down },
+    { t: online ? "LIVE" : "OFFLINE", c: P.dim },
   ];
-  return <Bar width={width} left={left} right={right} />;
+
+  return <Bar width={width} left={left} center={center} right={right} />;
 }

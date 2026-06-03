@@ -28,6 +28,29 @@ export function Ticker({ t }: { t: TickerData }) {
   );
 }
 
+export function PaneTicker({ t, width }: { t: TickerData; width: number }) {
+  const up = t.change_pct >= 0;
+  const sign = up ? "+" : "";
+  return (
+    <Box width={width}>
+      <Box flexGrow={1} flexShrink={1} minWidth={0}>
+        <Text wrap="truncate" color={P.fg}>
+          {t.symbol}
+        </Text>
+      </Box>
+      <Box flexShrink={0} marginLeft={1}>
+        <Text>
+          <Text color={P.dim}>{fmtPrice(t.price)} </Text>
+          <Text color={marketColor(up)}>
+            {up ? "▲" : "▼"} {sign}
+            {t.change_pct.toFixed(2)}%
+          </Text>
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
 export function InlineTicker({ t }: { t: TickerData }) {
   const up = t.change_pct >= 0;
   return (

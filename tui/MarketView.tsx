@@ -1,39 +1,65 @@
+import type { ReactNode } from "react";
 import { Box, Text } from "ink";
 import type { MarketsSnapshot } from "../shared/market.ts";
 import { P } from "./theme.ts";
-import { Ticker } from "./Ticker.tsx";
+import { PaneTicker } from "./Ticker.tsx";
 import { PolymarketRow } from "./PolymarketRow.tsx";
 import { fmtClock } from "./format.ts";
 
-export type MarketTab = "crypto" | "markets" | "polymarket";
+function Pane({
+  title,
+  color,
+  width,
+  children,
+}: {
+  title: string;
+  color: string;
+  width: number;
+  children: ReactNode;
+}) {
+  return (
+    <Box flexDirection="column" width={width} flexShrink={0} overflow="hidden">
+      <Text color={color} bold wrap="truncate">
+        {title}
+      </Text>
+      <Text color={P.rule}>{"─".repeat(width)}</Text>
+      {children}
+    </Box>
+  );
+}
 
-const META: Record<MarketTab, { title: string; color: string }> = {
-  crypto: { title: "CRYPTO — top by market cap", color: P.x },
-  markets: { title: "MARKETS — global indices & commodities", color: P.news },
-  polymarket: { title: "POLYMARKET — top by 24h volume", color: P.log },
-};
+function Divider({ height }: { height: number }) {
+  return (
+    <Box width={1} flexShrink={0} marginX={1}>
+      <Text color={P.rule}>{Array.from({ length: Math.max(1, height) }, () => "│").join("\n")}</Text>
+    </Box>
+  );
+}
 
 export function MarketView({
-  tab,
   markets,
   width,
   height,
   now,
 }: {
-  tab: MarketTab;
   markets: MarketsSnapshot | null;
   width: number;
   height: number;
   now: number;
 }) {
-  const { title, color } = META[tab];
-  const inner = Math.max(10, width - 2);
+  const inner = Math.max(24, width - 2);
+  const avail = inner - 6;
+  const polyW = Math.max(24, Math.round(avail * 0.42));
+  const rest = avail - polyW;
+  const cryptoW = Math.floor(rest / 2);
+  const indicesW = rest - cryptoW;
+  const paneRows = Math.max(1, height - 1);
 
   return (
     <Box flexDirection="column" width={width} height={height} paddingX={1} overflow="hidden">
       <Box>
-        <Text color={color} bold>
-          {title}
+        <Text color={P.dim} bold>
+          MARKETS
         </Text>
         {markets ? (
           <Text color={P.faint}>
@@ -42,23 +68,34 @@ export function MarketView({
           </Text>
         ) : null}
       </Box>
-      <Text color={P.rule}>{"─".repeat(inner)}</Text>
 
       {!markets ? (
         <Text color={P.faint}>loading markets …</Text>
-      ) : tab === "polymarket" ? (
-        markets.polymarkets.map((m, i) => (
-          <Box key={m.id}>
-            <Box width={3}>
-              <Text color={P.faint}>{i + 1}</Text>
-            </Box>
-            <PolymarketRow m={m} width={inner - 3} />
-          </Box>
-        ))
       ) : (
-        (tab === "crypto" ? markets.crypto : markets.indices).map((t) => (
-          <Ticker key={t.symbol} t={t} />
-        ))
+        <Box flexDirection="row" flexGrow={1}>
+          <Pane title="CRYPTO — by market cap" color={P.x} width={cryptoW}>
+            {markets.crypto.map((t) => (
+              <PaneTicker key={t.symbol} t={t} width={cryptoW} />
+            ))}
+          </Pane>
+          <Divider height={paneRows} />
+          <Pane title="INDICES & COMMODITIES" color={P.news} width={indicesW}>
+            {markets.indices.map((t) => (
+              <PaneTicker key={t.symbol} t={t} width={indicesW} />
+            ))}
+          </Pane>
+          <Divider height={paneRows} />
+          <Pane title="POLYMARKET — by 24h volume" color={P.log} width={polyW}>
+            {markets.polymarkets.map((m, i) => (
+              <Box key={m.id}>
+                <Box width={3} flexShrink={0}>
+                  <Text color={P.faint}>{i + 1}</Text>
+                </Box>
+                <PolymarketRow m={m} width={polyW - 3} />
+              </Box>
+            ))}
+          </Pane>
+        </Box>
       )}
     </Box>
   );

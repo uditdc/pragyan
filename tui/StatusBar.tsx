@@ -10,6 +10,7 @@ interface Props {
   buffer: number;
   stream: Stream;
   down: string[];
+  filter: { newsOnly: boolean; minScore: number } | null;
 }
 
 const STREAM_LABEL: Record<Stream, string> = {
@@ -24,7 +25,7 @@ const STREAM_COLOR: Record<Stream, string> = {
   paused: P.news,
 };
 
-export function StatusBar({ width, xCount, newsCount, buffer, stream, down }: Props) {
+export function StatusBar({ width, xCount, newsCount, buffer, stream, down, filter }: Props) {
   const left: Seg[] = down.length
     ? [{ t: `⚠ ${down.length} DOWN: ${down.join(", ")}   `, c: P.down, bold: true }]
     : [];
@@ -35,10 +36,13 @@ export function StatusBar({ width, xCount, newsCount, buffer, stream, down }: Pr
     { t: `${newsCount}   `, c: P.dim },
     { t: `buffer ${buffer}`, c: P.faint },
   );
+  if (filter) {
+    left.push({ t: `   ${filter.newsOnly ? "news" : "all"} · min ${filter.minScore.toFixed(1)}`, c: P.faint });
+  }
   const right: Seg[] = [
     { t: `${STREAM_LABEL[stream]}   `, c: STREAM_COLOR[stream] },
     {
-      t: "1-6 tabs · j/k move · enter open · x dismiss · u undo · space pause · t thr · n news · ←/→ digest history · r refresh/regen · q quit",
+      t: "1-4 tabs · j/k move · enter open · x dismiss · u undo · space pause · t thr · n news · ←/→ digest history · r refresh/regen · q quit",
       c: P.faint,
     },
   ];
