@@ -5,6 +5,8 @@ filters it down to high-signal news on a local backend, and reads it in a
 text-only terminal TUI. Everything runs on your machine — the backend binds to
 `127.0.0.1` and the extension rides your existing X session. Personal use only.
 
+<img width="935" height="545" alt="image" src="https://github.com/user-attachments/assets/2a296c14-8310-4ce8-b597-aff266fe8d88" />
+
 ```
 [X timeline]
    │  DOM scrape (incremental, virtualized-safe)
@@ -22,8 +24,6 @@ extension only harvests, the API does all ranking/filtering, the TUI is a dumb
 renderer. See [`docs/PRD.md`](docs/PRD.md) for the full design.
 
 ## Layout
-
-<img width="935" height="545" alt="image" src="https://github.com/user-attachments/assets/2a296c14-8310-4ce8-b597-aff266fe8d88" />
 
 | Path         | What                                                                 |
 |--------------|----------------------------------------------------------------------|
