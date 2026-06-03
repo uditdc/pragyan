@@ -19,11 +19,7 @@ Local API + SQLite   ──── heuristic pre-filter + scoring
 Terminal TUI (read-only renderer)
 ```
 
-Three components joined by one shared data contract (`shared/post.ts`): the
-extension only harvests, the API does all ranking/filtering, the TUI is a dumb
-renderer. See [`docs/PRD.md`](docs/PRD.md) for the full design.
-
-## Layout
+## Structure
 
 | Path         | What                                                                 |
 |--------------|----------------------------------------------------------------------|
@@ -64,12 +60,6 @@ Read the feed in the TUI:
 
 ```sh
 npm run tui
-```
-
-Seed some fake posts to try the pipeline without the extension:
-
-```sh
-npm run seed
 ```
 
 ## TUI keys
