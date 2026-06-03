@@ -1,6 +1,6 @@
-# xfeed harvester (Chrome extension, MV3)
+# pragyan harvester (Chrome extension, MV3)
 
-Harvests your own logged-in X timeline and sends posts to the local xfeed API.
+Harvests your own logged-in X timeline and sends posts to the local pragyan API.
 Personal use only — it automates *your* feed, nothing distributed.
 
 ## Architecture
@@ -37,7 +37,7 @@ consecutive scrolls that surface nothing new (i.e. the end of the loaded feed).
 ## Verify
 
 1. Open `https://x.com/home` while logged in.
-2. A badge appears bottom-right: `xfeed ▶ scrolling · seen N · sent M · queue Q`
+2. A badge appears bottom-right: `pragyan ▶ scrolling · seen N · sent M · queue Q`
    (`⦿ idle` / `⏸ paused` / `✓ done` reflect loop state; red = a POST failed).
 3. Watch it scroll and harvest, or disable auto-scroll and scroll by hand.
 4. Confirm posts landed: `curl 'http://127.0.0.1:8787/feed?limit=20'` — or open the TUI.

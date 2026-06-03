@@ -10,7 +10,7 @@ const dom = new JSDOM(`<!doctype html><body></body>`);
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 new Function(readFileSync(join(here, "..", "selectors.js"), "utf8")).call(globalThis);
-const { parseTweet } = globalThis.XFeedSelectors;
+const { parseTweet } = globalThis.PragyanSelectors;
 
 function article(html) {
   document.body.innerHTML = `<article data-testid="tweet">${html}</article>`;

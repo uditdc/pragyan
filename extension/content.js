@@ -1,5 +1,5 @@
 (function () {
-  const { TWEET, parseTweet } = globalThis.XFeedSelectors;
+  const { TWEET, parseTweet } = globalThis.PragyanSelectors;
 
   const DEFAULTS = {
     apiBase: "http://127.0.0.1:8787",
@@ -160,7 +160,7 @@
       const s = Math.ceil(breakRemainingMs / 1000);
       label = `break ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
     }
-    badge.textContent = `xfeed ${icon} ${label} · seen ${captured.size} · sent ${sent} · queue ${pending.length}`;
+    badge.textContent = `pragyan ${icon} ${label} · seen ${captured.size} · sent ${sent} · queue ${pending.length}`;
   }
 
   const scheduleHarvest = debounce(harvest, 250);

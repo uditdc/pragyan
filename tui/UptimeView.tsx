@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import type { MonitorState, MonitorStatus, UptimeSnapshot } from "../shared/uptime.ts";
 import { P } from "./theme.ts";
 import { fmtClock } from "./format.ts";
+import { Panel } from "./Panel.tsx";
 
 const STATE_GLYPH: Record<MonitorState, string> = {
   up: "●",
@@ -81,33 +82,35 @@ export function UptimeView({
   height: number;
   now: number;
 }) {
-  const inner = Math.max(10, width - 2);
+  const inner = Math.max(10, width - 6);
   const down = snapshot ? snapshot.monitors.filter((m) => m.state === "down").length : 0;
+
+  const meta = snapshot ? (
+    <Text color={P.faint}>
+      {snapshot.monitors.length} monitors
+      {down > 0 ? <Text color={P.down}> · {down} down</Text> : " · all up"} · updated{" "}
+      {fmtClock(Date.parse(snapshot.fetched_at) || now)}
+    </Text>
+  ) : undefined;
 
   return (
     <Box flexDirection="column" width={width} height={height} paddingX={1} overflow="hidden">
-      <Box>
-        <Text color={P.accent} bold>
-          UPTIME — service monitors
-        </Text>
-        {snapshot ? (
-          <Text color={P.faint}>
-            {"   "}
-            {snapshot.monitors.length} monitors
-            {down > 0 ? <Text color={P.down}> · {down} down</Text> : " · all up"}
-            {"   "}updated {fmtClock(Date.parse(snapshot.fetched_at) || now)}
-          </Text>
-        ) : null}
-      </Box>
-      <Text color={P.rule}>{"─".repeat(inner)}</Text>
-
-      {!snapshot ? (
-        <Text color={P.faint}>loading monitors …</Text>
-      ) : snapshot.monitors.length === 0 ? (
-        <Text color={P.faint}>no monitors configured — add services to config.json</Text>
-      ) : (
-        snapshot.monitors.map((m) => <MonitorRow key={m.name} m={m} inner={inner} />)
-      )}
+      <Panel
+        icon="◴"
+        iconColor={P.accent}
+        title="UPTIME — service monitors"
+        meta={meta}
+        width={width - 2}
+        flexGrow={1}
+      >
+        {!snapshot ? (
+          <Text color={P.faint}>loading monitors …</Text>
+        ) : snapshot.monitors.length === 0 ? (
+          <Text color={P.faint}>no monitors configured — add services to config.json</Text>
+        ) : (
+          snapshot.monitors.map((m) => <MonitorRow key={m.name} m={m} inner={inner} />)
+        )}
+      </Panel>
     </Box>
   );
 }

@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { Box, Text } from "ink";
 import type { Post } from "../shared/post.ts";
 import type { MarketsSnapshot } from "../shared/market.ts";
@@ -8,6 +7,7 @@ import { P, sourceOf } from "./theme.ts";
 import { relativeTime, fmtClock, fmtCount } from "./format.ts";
 import { PaneTicker } from "./Ticker.tsx";
 import { Cite } from "./Cite.tsx";
+import { Panel } from "./Panel.tsx";
 
 const KICKER_COLOR: Record<string, string> = {
   MACRO: P.news,
@@ -17,53 +17,6 @@ const KICKER_COLOR: Record<string, string> = {
   DEV: P.x,
   TECH: P.x,
 };
-
-function Panel({
-  icon,
-  iconColor,
-  title,
-  meta,
-  focus,
-  width,
-  flexGrow,
-  children,
-}: {
-  icon?: string;
-  iconColor?: string;
-  title: string;
-  meta?: string;
-  focus?: boolean;
-  width?: number;
-  flexGrow?: number;
-  children: ReactNode;
-}) {
-  const cw = Math.max(4, (width ?? 0) - 4);
-  return (
-    <Box
-      flexDirection="column"
-      width={width}
-      flexGrow={flexGrow}
-      minHeight={0}
-      borderStyle="round"
-      borderColor={focus ? P.accent : P.rule}
-      paddingX={1}
-      overflow="hidden"
-    >
-      <Box>
-        {icon && <Text color={iconColor ?? P.faint}>{icon} </Text>}
-        <Text color={focus ? P.white : P.dim} bold>
-          {title}
-        </Text>
-        <Box flexGrow={1} />
-        {meta && <Text color={P.faint}>{meta}</Text>}
-      </Box>
-      {width ? <Text color={P.rule}>{"─".repeat(cw)}</Text> : null}
-      <Box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
-        {children}
-      </Box>
-    </Box>
-  );
-}
 
 function MiniTheme({ theme }: { theme: Theme }) {
   return (

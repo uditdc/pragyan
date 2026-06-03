@@ -78,7 +78,7 @@ function mockProvider(): MarketsSnapshot {
 }
 
 // ── real providers (keyless; selected via config.sources.provider="real") ───
-const UA = "xfeed/0.1 (personal use)";
+const UA = "pragyan/0.1 (personal use)";
 
 interface CoinMarket {
   symbol: string;

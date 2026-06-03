@@ -286,7 +286,7 @@ the consolidated feed to the terminal height and tracks a scroll offset itself.
 **Design system** (from the Claude Design "FEEDWIRE" handoff): a muted dark realistic-TUI
 look — color is emphasis only. Full-screen alternate buffer with two fixed chrome bars and
 a flexing body between them:
-- **Top bar** — `◆ XFEED` identity · **tab chips** (`1 feed · 2 crypto · 3 nifty ·
+- **Top bar** — `◆ PRAGYAN` identity · **tab chips** (`1 feed · 2 crypto · 3 nifty ·
   4 polymarket`, active chip bright) · `all`/`news` filter · `min` threshold · live/offline
   dot · item count · clock.
 - **Tabs** — number keys `1-4` (and `Tab`/`Shift+Tab`) switch views. `Feed` is the X-post

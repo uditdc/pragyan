@@ -2,34 +2,22 @@ import { Box, Text } from "ink";
 import type { FeedCard } from "./threads.ts";
 import { P, sourceOf, sourceColor, sigil } from "./theme.ts";
 import { relativeTime, fmtCount } from "./format.ts";
+import { Panel } from "./Panel.tsx";
 
 interface Props {
   card: FeedCard | null;
   width: number;
-  height: number;
   now: number;
 }
 
-export function DetailPane({ card, width, height, now }: Props) {
-  const inner = Math.max(8, width - 3);
-  const frame = {
-    width,
-    height,
-    flexDirection: "column" as const,
-    borderStyle: "single" as const,
-    borderColor: P.rule,
-    borderTop: false,
-    borderRight: false,
-    borderBottom: false,
-    paddingX: 1,
-    overflow: "hidden" as const,
-  };
+export function DetailPane({ card, width, now }: Props) {
+  const inner = Math.max(8, width - 4);
 
   if (!card) {
     return (
-      <Box {...frame}>
+      <Panel title="DETAIL" width={width}>
         <Text color={P.faint}>no selection</Text>
-      </Box>
+      </Panel>
     );
   }
 
@@ -41,17 +29,14 @@ export function DetailPane({ card, width, height, now }: Props) {
   const rest = card.parts.slice(1);
 
   return (
-    <Box {...frame}>
+    <Panel
+      icon={sigil(source)}
+      iconColor={sourceColor(source)}
+      title="DETAIL"
+      meta="↵ open"
+      width={width}
+    >
       <Box>
-        <Text wrap="truncate">
-          <Text color={sourceColor(source)}>{sigil(source)} </Text>
-          <Text color={P.faint}>{source === "news" ? "news" : "post"} · selected</Text>
-        </Text>
-        <Box flexGrow={1} />
-        <Text color={P.faint}>↵ open</Text>
-      </Box>
-
-      <Box marginTop={1}>
         <Text wrap="truncate">
           <Text color={P.white} bold>
             {post.author_name}
@@ -107,6 +92,6 @@ export function DetailPane({ card, width, height, now }: Props) {
 
       <Box flexGrow={1} />
       <Text color={P.faint}>read-only — no reply / like / repost</Text>
-    </Box>
+    </Panel>
   );
 }

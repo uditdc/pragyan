@@ -17,7 +17,7 @@ interface MonitorRuntime {
   last_latency_ms: number | null;
 }
 
-const UA = "xfeed-uptime/0.1 (personal use)";
+const UA = "pragyan-uptime/0.1 (personal use)";
 
 const monitors: MonitorRuntime[] = config.monitors.services.map((s) => ({
   name: s.name,

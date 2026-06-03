@@ -140,5 +140,5 @@
     };
   }
 
-  globalThis.XFeedSelectors = { TWEET, parseTweet };
+  globalThis.PragyanSelectors = { TWEET, parseTweet };
 })();

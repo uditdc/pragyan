@@ -16,6 +16,7 @@ import { fmtClock } from "./format.ts";
 import { sourceOf, P } from "./theme.ts";
 import { TopBar, TABS } from "./TopBar.tsx";
 import { DashboardView } from "./DashboardView.tsx";
+import { Panel } from "./Panel.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { FeedItem } from "./FeedItem.tsx";
 import { DetailPane } from "./DetailPane.tsx";
@@ -191,9 +192,11 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     [uptime],
   );
   const detailWidth = onFeedTab && columns >= 80 ? Math.min(46, Math.floor(columns * 0.36)) : 0;
-  const feedWidth = columns - detailWidth;
+  const feedGap = detailWidth ? 1 : 0;
+  const feedPanelW = columns - 2 - detailWidth - feedGap;
+  const feedWidth = Math.max(10, feedPanelW - 4);
   const bodyRows = Math.max(3, rows - 2);
-  const feedRows = Math.max(1, bodyRows - 1);
+  const feedRows = Math.max(1, bodyRows - 5);
 
   const win = pickWindow(cards, selectedIndex, start, feedRows, feedWidth);
   useEffect(() => {
@@ -212,7 +215,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const newPosts = paused ? buffer : newCount;
   useEffect(() => {
     if (!process.stdout.isTTY) return;
-    const title = newPosts > 0 ? `XFEED (${newPosts})` : "XFEED";
+    const title = newPosts > 0 ? `PRAGYAN (${newPosts})` : "PRAGYAN";
     process.stdout.write(`\x1b]0;${title}\x07`);
   }, [newPosts]);
 
@@ -320,46 +323,50 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       <TopBar width={columns} online={online} clock={fmtClock(now)} tabIdx={tabIdx} />
 
       {onFeedTab ? (
-        <Box height={bodyRows} width={columns}>
-          <Box flexDirection="column" width={feedWidth} height={bodyRows}>
-            <Box height={1} paddingX={1}>
-              {showPill ? (
-                <Text color={P.accent}>▲ {newCount} new — g to jump</Text>
-              ) : paused ? (
-                <Text color={P.news}>
-                  ⏸ paused · {buffer} buffered — space to resume
-                </Text>
-              ) : (
-                <Text> </Text>
-              )}
-            </Box>
-            <Box flexDirection="column" overflow="hidden">
-              {visible.length === 0 ? (
-                <Box paddingX={1}>
+        <Box width={columns} height={bodyRows} paddingX={1} overflow="hidden">
+          <Box flexDirection="row" flexGrow={1} minHeight={0}>
+            <Panel
+              title="FEED"
+              meta={`${cards.length} items${newsOnly ? " · news" : ""}`}
+              width={feedPanelW}
+            >
+              <Box height={1}>
+                {showPill ? (
+                  <Text color={P.accent}>▲ {newCount} new — g to jump</Text>
+                ) : paused ? (
+                  <Text color={P.news}>⏸ paused · {buffer} buffered — space to resume</Text>
+                ) : (
+                  <Text> </Text>
+                )}
+              </Box>
+              <Box flexDirection="column" flexGrow={1} overflow="hidden">
+                {visible.length === 0 ? (
                   <Text color={P.faint}>
                     {online
                       ? "no posts match the current filters."
                       : `cannot reach API at ${baseUrl}`}
                   </Text>
-                </Box>
-              ) : (
-                visible.map((card) => (
-                  <FeedItem
-                    key={card.key}
-                    card={card}
-                    width={feedWidth}
-                    selected={card.key === selectedCard?.key}
-                    fresh={freshRef.current.has(card.lead.id)}
-                    now={now}
-                  />
-                ))
-              )}
-            </Box>
-          </Box>
+                ) : (
+                  visible.map((card) => (
+                    <FeedItem
+                      key={card.key}
+                      card={card}
+                      width={feedWidth}
+                      selected={card.key === selectedCard?.key}
+                      fresh={freshRef.current.has(card.lead.id)}
+                      now={now}
+                    />
+                  ))
+                )}
+              </Box>
+            </Panel>
 
-          {detailWidth > 0 && (
-            <DetailPane card={selectedCard} width={detailWidth} height={bodyRows} now={now} />
-          )}
+            {detailWidth > 0 && (
+              <Box marginLeft={1} flexShrink={0}>
+                <DetailPane card={selectedCard} width={detailWidth} now={now} />
+              </Box>
+            )}
+          </Box>
         </Box>
       ) : onDashboardTab ? (
         <DashboardView

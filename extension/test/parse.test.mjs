@@ -11,7 +11,7 @@ globalThis.document = dom.window.document;
 
 const code = readFileSync(join(here, "..", "selectors.js"), "utf8");
 new Function(code).call(globalThis);
-const { parseTweet } = globalThis.XFeedSelectors;
+const { parseTweet } = globalThis.PragyanSelectors;
 
 function makeArticle({ handle, id, name, datetime, text, promoted, replying, thread, quoted, ariaLabel, media }) {
   const mediaHtml =

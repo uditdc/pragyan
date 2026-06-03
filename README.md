@@ -1,4 +1,4 @@
-# xfeed
+# pragyan
 
 A personal tool that scrapes your own logged-in X (Twitter) timeline, ranks and
 filters it down to high-signal news on a local backend, and reads it in a
