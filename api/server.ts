@@ -74,6 +74,7 @@ app.get("/feed", (req, res) => {
     news_only: q.news_only === "true",
     include_dropped: q.include_dropped === "true",
     include_expired: q.include_expired === "true",
+    sort: q.sort === "recent" ? "recent" : "score",
   });
   res.json(result);
 });

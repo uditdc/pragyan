@@ -2,6 +2,8 @@ export const SCHEMA_VERSION = 1 as const;
 
 export type MediaType = "photo" | "video" | "gif" | "card";
 
+export type FeedSort = "score" | "recent";
+
 export interface Metrics {
   replies: number;
   reposts: number;

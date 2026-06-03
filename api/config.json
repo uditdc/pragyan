@@ -40,8 +40,8 @@
     "polymarket_count": 20
   },
   "monitors": {
-    "interval_ms": 60000,
-    "timeout_ms": 5000,
+    "interval_ms": 120000,
+    "timeout_ms": 10000,
     "history": 120,
     "services": [
       { "name": "pragyan", "url": "http://127.0.0.1:8787/health" },

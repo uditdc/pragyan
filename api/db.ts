@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute } from "node:path";
 import type {
+  FeedSort,
   HarvestedPost,
   MediaType,
   Post,
@@ -282,6 +283,7 @@ export interface FeedQuery {
   news_only: boolean;
   include_dropped: boolean;
   include_expired: boolean;
+  sort: FeedSort;
 }
 
 export interface FeedResult {
@@ -322,10 +324,14 @@ export function queryFeed(q: FeedQuery): FeedResult {
   }
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const orderSql =
+    q.sort === "recent"
+      ? "created_at DESC, harvested_at DESC"
+      : `scored_at IS NULL, ${composite} DESC, harvested_at DESC`;
   const rows = db
     .prepare<Record<string, unknown>, Row>(
       `SELECT * FROM posts ${whereSql}
-       ORDER BY scored_at IS NULL, ${composite} DESC, harvested_at DESC
+       ORDER BY ${orderSql}
        LIMIT @limit`,
     )
     .all(params);

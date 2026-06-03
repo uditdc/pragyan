@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdin } from "ink";
-import type { Post } from "../shared/post.ts";
+import type { FeedSort, Post } from "../shared/post.ts";
 import {
   fetchFeed,
   postViewed,
@@ -61,6 +61,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const [start, setStart] = useState(0);
   const [thresholdIdx, setThresholdIdx] = useState(initialThresholdIdx);
   const [newsOnly, setNewsOnly] = useState(false);
+  const [sort, setSort] = useState<FeedSort>("score");
   const [paused, setPaused] = useState(false);
   const [online, setOnline] = useState(false);
   const [buffer, setBuffer] = useState(0);
@@ -99,7 +100,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetchFeed({ baseUrl, minScore, newsOnly, limit });
+      const res = await fetchFeed({ baseUrl, minScore, newsOnly, limit, sort });
       setOnline(true);
       if (pausedRef.current) {
         pendingRef.current = res.posts;
@@ -110,7 +111,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     } catch {
       setOnline(false);
     }
-  }, [baseUrl, minScore, newsOnly, limit, apply]);
+  }, [baseUrl, minScore, newsOnly, limit, sort, apply]);
 
   const loadMarkets = useCallback(async () => {
     try {
@@ -292,6 +293,9 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       } else if (input === "n") {
         setNewsOnly((v) => !v);
         setStart(0);
+      } else if (input === "s") {
+        setSort((v) => (v === "score" ? "recent" : "score"));
+        setStart(0);
       } else if (input === "x") {
         if (selectedCard) {
           const ids = selectedCard.parts.map((p) => p.id);
@@ -327,7 +331,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           <Box flexDirection="row" flexGrow={1} minHeight={0}>
             <Panel
               title="FEED"
-              meta={`${cards.length} items${newsOnly ? " · news" : ""}`}
+              meta={`${cards.length} items${newsOnly ? " · news" : ""} · ↓${sort}`}
               width={feedPanelW}
             >
               <Box height={1}>
@@ -395,7 +399,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         buffer={buffer}
         stream={stream}
         down={downServices}
-        filter={onFeedTab ? { newsOnly, minScore } : null}
+        filter={onFeedTab ? { newsOnly, minScore, sort } : null}
       />
     </Box>
   );

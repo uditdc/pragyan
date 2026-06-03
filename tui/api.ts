@@ -1,4 +1,4 @@
-import type { Post } from "../shared/post.ts";
+import type { FeedSort, Post } from "../shared/post.ts";
 import type {
   SummariesResponse,
   SummaryRecord,
@@ -15,6 +15,7 @@ export interface FeedParams {
   minScore: number;
   newsOnly: boolean;
   limit: number;
+  sort: FeedSort;
 }
 
 export async function fetchHealth(baseUrl: string): Promise<boolean> {
@@ -32,6 +33,7 @@ export async function fetchFeed(params: FeedParams): Promise<FeedResponse> {
   const url = new URL(`${params.baseUrl}/feed`);
   url.searchParams.set("min_score", String(params.minScore));
   url.searchParams.set("limit", String(params.limit));
+  url.searchParams.set("sort", params.sort);
   if (params.newsOnly) url.searchParams.set("news_only", "true");
 
   const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
