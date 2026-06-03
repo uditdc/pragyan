@@ -1,7 +1,7 @@
 import { P } from "./theme.ts";
 import { Bar, type Seg } from "./Bar.tsx";
 
-export const TABS = ["summary", "feed", "markets", "uptime"] as const;
+export const TABS = ["dashboard", "feed", "markets", "uptime"] as const;
 
 const TITLE_STOPS = [P.accent, P.x, P.log];
 
@@ -21,7 +21,7 @@ function gradient(text: string, stops: string[]): Seg[] {
       .map((k) => Math.round(rgb[lo][k] + (rgb[lo + 1][k] - rgb[lo][k]) * f))
       .map((v) => v.toString(16).padStart(2, "0"))
       .join("");
-    return { t: ch, c: `#${c}`, bold: true };
+    return { t: i < chars.length - 1 ? `${ch} ` : ch, c: `#${c}`, bold: true };
   });
 }
 

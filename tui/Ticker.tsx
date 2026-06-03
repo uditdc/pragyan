@@ -50,17 +50,3 @@ export function PaneTicker({ t, width }: { t: TickerData; width: number }) {
     </Box>
   );
 }
-
-export function InlineTicker({ t }: { t: TickerData }) {
-  const up = t.change_pct >= 0;
-  return (
-    <Text>
-      <Text color={P.fg}>{t.symbol} </Text>
-      <Text color={P.dim}>{fmtPrice(t.price)} </Text>
-      <Text color={marketColor(up)}>
-        {up ? "▲" : "▼"}
-        {Math.abs(t.change_pct).toFixed(2)}%
-      </Text>
-    </Text>
-  );
-}

@@ -15,14 +15,13 @@ import { pickWindow } from "./layout.ts";
 import { fmtClock } from "./format.ts";
 import { sourceOf, P } from "./theme.ts";
 import { TopBar, TABS } from "./TopBar.tsx";
-import { SummaryView } from "./SummaryView.tsx";
+import { DashboardView } from "./DashboardView.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { FeedItem } from "./FeedItem.tsx";
 import { DetailPane } from "./DetailPane.tsx";
 import { openInBrowser } from "./browser.ts";
 import { fetchMarkets } from "./markets.ts";
 import type { MarketsSnapshot } from "../shared/market.ts";
-import { MarketStrip } from "./MarketStrip.tsx";
 import { MarketView } from "./MarketView.tsx";
 import { UptimeView } from "./UptimeView.tsx";
 import { fetchUptime, recheckUptime } from "./uptime.ts";
@@ -184,7 +183,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   }, [cards, selectedId]);
 
   const onFeedTab = TABS[tabIdx] === "feed";
-  const onSummaryTab = TABS[tabIdx] === "summary";
+  const onDashboardTab = TABS[tabIdx] === "dashboard";
   const onUptimeTab = TABS[tabIdx] === "uptime";
 
   const downServices = useMemo(
@@ -194,7 +193,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const detailWidth = onFeedTab && columns >= 80 ? Math.min(46, Math.floor(columns * 0.36)) : 0;
   const feedWidth = columns - detailWidth;
   const bodyRows = Math.max(3, rows - 2);
-  const feedRows = Math.max(1, bodyRows - 2);
+  const feedRows = Math.max(1, bodyRows - 1);
 
   const win = pickWindow(cards, selectedIndex, start, feedRows, feedWidth);
   useEffect(() => {
@@ -245,7 +244,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         return;
       }
       if (input === "r") {
-        if (onSummaryTab) {
+        if (onDashboardTab) {
           setRegenerating(true);
           setSummaryIdx(0);
           void regenerateSummary(baseUrl)
@@ -259,7 +258,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         }
         return;
       }
-      if (onSummaryTab) {
+      if (onDashboardTab) {
         if (input === "h" || key.leftArrow) {
           setSummaryIdx((i) => Math.min(summaries.length - 1, i + 1));
         } else if (input === "l" || key.rightArrow) {
@@ -323,7 +322,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       {onFeedTab ? (
         <Box height={bodyRows} width={columns}>
           <Box flexDirection="column" width={feedWidth} height={bodyRows}>
-            <MarketStrip markets={markets} width={feedWidth} />
             <Box height={1} paddingX={1}>
               {showPill ? (
                 <Text color={P.accent}>▲ {newCount} new — g to jump</Text>
@@ -363,12 +361,15 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
             <DetailPane card={selectedCard} width={detailWidth} height={bodyRows} now={now} />
           )}
         </Box>
-      ) : onSummaryTab ? (
-        <SummaryView
+      ) : onDashboardTab ? (
+        <DashboardView
           summary={summaries[Math.min(summaryIdx, summaries.length - 1)] ?? null}
           newSince={summaryNew}
           index={summaries.length ? Math.min(summaryIdx, summaries.length - 1) : 0}
           total={summaries.length}
+          posts={posts}
+          markets={markets}
+          uptime={uptime}
           regenerating={regenerating}
           width={columns}
           height={bodyRows}

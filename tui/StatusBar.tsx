@@ -42,7 +42,7 @@ export function StatusBar({ width, xCount, newsCount, buffer, stream, down, filt
   const right: Seg[] = [
     { t: `${STREAM_LABEL[stream]}   `, c: STREAM_COLOR[stream] },
     {
-      t: "1-4 tabs · j/k move · enter open · x dismiss · u undo · space pause · t thr · n news · ←/→ digest history · r refresh/regen · q quit",
+      t: "1-4 tabs · space pause · t thr · n news · ←/→ digest history · r refresh/regen · q quit",
       c: P.faint,
     },
   ];
