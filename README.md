@@ -5,7 +5,7 @@ filters it down to high-signal news on a local backend, and reads it in a
 text-only terminal TUI. Everything runs on your machine — the backend binds to
 `127.0.0.1` and the extension rides your existing X session. Personal use only.
 
-<img width="935" height="545" alt="image" src="https://github.com/user-attachments/assets/2a296c14-8310-4ce8-b597-aff266fe8d88" />
+<img width="2820" height="1737" alt="image" src="https://github.com/user-attachments/assets/afd12278-d407-45e5-b58f-5356c052dbcd" />
 
 ```
 [X timeline]
