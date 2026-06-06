@@ -14,6 +14,9 @@ export const P = {
   up: "#74b58a",
   down: "#d08176",
   log: "#9089bd",
+  matrixHead: "#335343ff",
+  matrixBody: "#2c4536",
+  matrixTrail: "#1e2b23",
 } as const;
 
 export type Source = "x" | "news";
