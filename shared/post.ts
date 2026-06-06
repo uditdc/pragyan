@@ -4,6 +4,8 @@ export type MediaType = "photo" | "video" | "gif" | "card";
 
 export type FeedSort = "score" | "recent";
 
+export type PostSource = "x" | "google_news";
+
 export interface Metrics {
   replies: number;
   reposts: number;
@@ -28,6 +30,7 @@ export type DropReason =
 export interface Post {
   schema_version: number;
   id: string;
+  source: PostSource;
   author_handle: string;
   author_name: string;
   text: string;
@@ -61,6 +64,7 @@ export interface Post {
 export type HarvestedPost = Pick<
   Post,
   | "id"
+  | "source"
   | "author_handle"
   | "author_name"
   | "text"

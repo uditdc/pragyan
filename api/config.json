@@ -37,7 +37,15 @@
     "provider": "real",
     "poll_interval_ms": 60000,
     "crypto_count": 20,
-    "polymarket_count": 20
+    "polymarket_count": 20,
+    "news": {
+      "enabled": true,
+      "poll_interval_ms": 900000,
+      "per_topic_cap": 15,
+      "hl": "en-US",
+      "gl": "US",
+      "ceid": "US:en"
+    }
   },
   "monitors": {
     "interval_ms": 120000,
@@ -46,7 +54,7 @@
     "services": [
       { "name": "pragyan", "url": "http://127.0.0.1:8787/health" },
       { "name": "memorybase", "url": "https://api.memorybase.app/api/v1/health" },
-      { "name": "askrera", "url": "https://api.askrera.com/health" }
+      { "name": "askrera", "url": "http://127.0.0.1:3004/health" }
     ]
   },
   "server": { "host": "127.0.0.1", "port": 8787, "db_path": "api/feed.db" }

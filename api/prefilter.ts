@@ -22,7 +22,7 @@ function emojiDensity(text: string): number {
   return (text.match(EMOJI)?.length ?? 0) / chars.length;
 }
 
-function clickbaitScore(text: string): number {
+export function clickbaitScore(text: string): number {
   const lower = text.toLowerCase();
   const phraseHits = config.prefilter.clickbait_phrases.filter((p) =>
     lower.includes(p.toLowerCase()),

@@ -35,6 +35,14 @@ export interface Config {
     poll_interval_ms: number;
     crypto_count: number;
     polymarket_count: number;
+    news: {
+      enabled: boolean;
+      poll_interval_ms: number;
+      per_topic_cap: number;
+      hl: string;
+      gl: string;
+      ceid: string;
+    };
   };
   monitors: {
     interval_ms: number;

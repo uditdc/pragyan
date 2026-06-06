@@ -48,9 +48,11 @@ export function FeedItem({ card, width, selected, fresh, now }: Props) {
             </Text>
           </Text>
         </Box>
-        <Box flexShrink={0} marginLeft={1}>
-          <Text color={P.faint}>{metricsLine(post.metrics)}</Text>
-        </Box>
+        {post.source === "google_news" ? null : (
+          <Box flexShrink={0} marginLeft={1}>
+            <Text color={P.faint}>{metricsLine(post.metrics)}</Text>
+          </Box>
+        )}
       </Box>
       <Box paddingLeft={2}>
         <Text color={bodyColor}>{lines.join("\n")}</Text>

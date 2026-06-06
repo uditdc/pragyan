@@ -15,6 +15,7 @@ import {
   countNewSince,
 } from "./db.ts";
 import { getSnapshot, startMarkets } from "./markets.ts";
+import { startNews } from "./news.ts";
 import { getUptimeSnapshot, startUptime, checkNow } from "./uptime.ts";
 import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
 
@@ -43,7 +44,11 @@ app.post("/ingest", (req, res) => {
   for (const raw of posts) {
     if (!raw?.id) continue;
     const isDuplicate = postExists(raw.id);
-    const post: HarvestedPost = { ...raw, harvested_at: raw.harvested_at ?? now };
+    const post: HarvestedPost = {
+      ...raw,
+      source: raw.source ?? "x",
+      harvested_at: raw.harvested_at ?? now,
+    };
 
     const verdict = prefilter(post);
     const scores = verdict.kept ? dummyScore(post, verdict.clickbait_heuristic) : null;
@@ -141,6 +146,7 @@ app.post("/summary/regenerate", async (_req, res) => {
 });
 
 startMarkets();
+startNews();
 startSummary();
 
 app.listen(config.server.port, config.server.host, () => {

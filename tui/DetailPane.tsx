@@ -45,7 +45,8 @@ export function DetailPane({ card, width, now }: Props) {
         </Text>
       </Box>
       <Text color={P.faint} wrap="truncate">
-        {post.author_handle} · {relativeTime(post.created_at, now)} ago · via X
+        {post.author_handle} · {relativeTime(post.created_at, now)} ago · via{" "}
+        {post.source === "google_news" ? "Google News" : "X"}
       </Text>
 
       <Box marginTop={1}>

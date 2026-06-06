@@ -24,6 +24,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS posts (
     id TEXT PRIMARY KEY,
     schema_version INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT 'x',
     author_handle TEXT NOT NULL,
     author_name TEXT NOT NULL,
     text TEXT NOT NULL,
@@ -78,6 +79,7 @@ const existingColumns = new Set(
 for (const [name, type] of [
   ["viewed_at", "TEXT"],
   ["expired_at", "TEXT"],
+  ["source", "TEXT NOT NULL DEFAULT 'x'"],
 ] as const) {
   if (!existingColumns.has(name)) {
     db.exec(`ALTER TABLE posts ADD COLUMN ${name} ${type}`);
@@ -91,6 +93,7 @@ db.exec(
 interface Row {
   id: string;
   schema_version: number;
+  source: string;
   author_handle: string;
   author_name: string;
   text: string;
@@ -137,6 +140,7 @@ function rowToPost(r: Row): Post {
   return {
     schema_version: r.schema_version,
     id: r.id,
+    source: r.source as Post["source"],
     author_handle: r.author_handle,
     author_name: r.author_name,
     text: r.text,
@@ -173,14 +177,14 @@ const existsStmt = db.prepare<[string], { id: string }>(
 
 const upsertStmt = db.prepare(`
   INSERT INTO posts (
-    id, schema_version, author_handle, author_name, text, created_at, url,
+    id, schema_version, source, author_handle, author_name, text, created_at, url,
     is_repost, is_quote, is_reply, is_ad, is_thread, thread_id, quoted_text,
     media_types, m_replies, m_reposts, m_likes, m_views, harvested_at,
     kept, drop_reason, clickbait_heuristic,
     s_relevance, s_importance, s_clickbait, s_is_news, s_news_confidence, scored_at,
     viewed_at, expired_at
   ) VALUES (
-    @id, @schema_version, @author_handle, @author_name, @text, @created_at, @url,
+    @id, @schema_version, @source, @author_handle, @author_name, @text, @created_at, @url,
     @is_repost, @is_quote, @is_reply, @is_ad, @is_thread, @thread_id, @quoted_text,
     @media_types, @m_replies, @m_reposts, @m_likes, @m_views, @harvested_at,
     @kept, @drop_reason, @clickbait_heuristic,
@@ -213,6 +217,7 @@ export function upsertPost(s: StoredPost): void {
   upsertStmt.run({
     id: p.id,
     schema_version: SCHEMA_VERSION,
+    source: p.source,
     author_handle: p.author_handle,
     author_name: p.author_name,
     text: p.text,
