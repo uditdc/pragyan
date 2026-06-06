@@ -14,6 +14,7 @@ import { consolidateThreads } from "./threads.ts";
 import { pickWindow } from "./layout.ts";
 import { fmtClock } from "./format.ts";
 import { sourceOf, P } from "./theme.ts";
+import { config } from "./config.ts";
 import { TopBar, TABS } from "./TopBar.tsx";
 import { MatrixRain } from "./MatrixRain.tsx";
 import { DashboardView } from "./DashboardView.tsx";
@@ -151,14 +152,14 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     const uptimePoll = setInterval(() => void loadUptime(), 15_000);
     const summaryPoll = setInterval(() => void loadSummary(), 30_000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
-    const anim = setInterval(() => setFrame((f) => f + 1), 130);
+    const anim = config.matrix_rain ? setInterval(() => setFrame((f) => f + 1), 130) : null;
     return () => {
       clearInterval(poll);
       clearInterval(marketPoll);
       clearInterval(uptimePoll);
       clearInterval(summaryPoll);
       clearInterval(clock);
-      clearInterval(anim);
+      if (anim) clearInterval(anim);
     };
   }, [load, loadMarkets, loadUptime, loadSummary, pollMs]);
 
@@ -328,7 +329,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
-      <MatrixRain columns={columns} rows={rows} frame={frame} />
+      {config.matrix_rain && <MatrixRain columns={columns} rows={rows} frame={frame} />}
       <TopBar width={columns} online={online} clock={fmtClock(now)} tabIdx={tabIdx} />
 
       {onFeedTab ? (
