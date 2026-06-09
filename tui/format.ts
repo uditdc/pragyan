@@ -12,6 +12,19 @@ export function relativeTime(iso: string, now: number): string {
   return `${Math.round(hr / 24)}d`;
 }
 
+export function relativeAgo(iso: string, now: number): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "—";
+  const sec = Math.max(0, Math.round((now - then) / 1000));
+  if (sec < 45) return "just now";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr} hr ago`;
+  const day = Math.round(hr / 24);
+  return `${day} day${day > 1 ? "s" : ""} ago`;
+}
+
 export function fmtClock(now: number): string {
   const d = new Date(now);
   const p = (n: number) => String(n).padStart(2, "0");

@@ -43,6 +43,9 @@ export interface Directive {
   branch?: string;
   commits?: string;
   age?: string;
+  // true once the directive is `done` on the main tree (PR merged); while it is
+  // `done` only on the branch/worktree it reads as committed-but-not-yet-merged.
+  merged: boolean;
   sessions: Session[];
   steers: Steer[];
 }

@@ -234,28 +234,47 @@ function parseSession(filePath: string, id: string): Session | null {
   };
 }
 
-// A directive is worked on its own git worktree, so its phase sessions live under
-// the worktree's encoded path — not the project's. Discover across both: the main
-// checkout plus every linked worktree.
-function sessionRoots(projectPath: string): string[] {
-  const roots = new Set<string>([projectPath]);
+interface Worktree {
+  path: string;
+  branch: string | null;
+}
+
+// A directive is worked on its own git worktree/branch: its phase sessions live under
+// the worktree's encoded path, and its live status is the directive `.md` on that
+// branch — not the main checkout. Enumerate worktrees once and thread them through.
+function listWorktrees(projectPath: string): Worktree[] {
+  const out: Worktree[] = [];
   try {
-    const out = execFileSync("git", ["worktree", "list", "--porcelain"], {
+    const text = execFileSync("git", ["worktree", "list", "--porcelain"], {
       cwd: projectPath,
       encoding: "utf8",
     });
-    for (const line of out.split("\n")) {
-      if (line.startsWith("worktree ")) roots.add(line.slice("worktree ".length).trim());
+    let path = "";
+    let branch: string | null = null;
+    const flush = () => {
+      if (path) out.push({ path, branch });
+      path = "";
+      branch = null;
+    };
+    for (const line of text.split("\n")) {
+      if (line.startsWith("worktree ")) {
+        flush();
+        path = line.slice("worktree ".length).trim();
+      } else if (line.startsWith("branch ")) {
+        branch = line.slice("branch ".length).trim().replace(/^refs\/heads\//, "");
+      }
     }
+    flush();
   } catch {
     /* not a git repo, or git unavailable — main checkout only */
   }
-  return [...roots];
+  return out;
 }
 
-function listSessions(projectPath: string): Session[] {
+function listSessions(projectPath: string, worktrees: Worktree[]): Session[] {
+  const roots = new Set<string>([projectPath, ...worktrees.map((w) => w.path)]);
   const candidates: { path: string; m: number }[] = [];
-  for (const root of sessionRoots(projectPath)) {
+  for (const root of roots) {
     const dir = join(CLAUDE_PROJECTS, encodeClaudeDir(root));
     try {
       for (const f of readdirSync(dir)) {
@@ -348,7 +367,38 @@ function parseSteers(raw: string): Steer[] {
   return steers;
 }
 
-function readDirectives(projectPath: string): Directive[] {
+// The live status of a directive lives on its branch — work updates the `.md` on the
+// worktree and commits it, while the main tree stays at the pre-run version. Read the
+// freshest source: the worktree working copy → the committed branch → the main tree.
+function liveDirectiveRaw(
+  projectPath: string,
+  mainPath: string,
+  file: string,
+  branch: string,
+  worktrees: Map<string, string>,
+): string {
+  if (branch) {
+    const wt = worktrees.get(branch);
+    if (wt) {
+      try {
+        return readFileSync(join(wt, ".agents", "directives", file), "utf8");
+      } catch {
+        /* worktree missing the file — fall through */
+      }
+    }
+    try {
+      return execFileSync("git", ["show", `${branch}:.agents/directives/${file}`], {
+        cwd: projectPath,
+        encoding: "utf8",
+      });
+    } catch {
+      /* branch gone or file not on it — fall through to main */
+    }
+  }
+  return readFileSync(mainPath, "utf8");
+}
+
+function readDirectives(projectPath: string, worktrees: Worktree[]): Directive[] {
   const dir = directivesDir(projectPath);
   let files: string[];
   try {
@@ -356,10 +406,21 @@ function readDirectives(projectPath: string): Directive[] {
   } catch {
     return [];
   }
+  const branchToWt = new Map(
+    worktrees.filter((w) => w.branch).map((w) => [w.branch as string, w.path]),
+  );
   return files
     .map((f) => {
       const filePath = join(dir, f);
-      const raw = readFileSync(filePath, "utf8");
+      // Main being `done` means the PR merged — that wins (the directive is merged).
+      // Otherwise the live status is on the branch/worktree, so read it from there.
+      const mainRaw = readFileSync(filePath, "utf8");
+      const mainFm = parseFrontmatter(mainRaw);
+      const branch = typeof mainFm.branch === "string" ? mainFm.branch : "";
+      const merged = mainFm.state === "done";
+      const raw = merged
+        ? mainRaw
+        : liveDirectiveRaw(projectPath, filePath, f, branch, branchToWt);
       const fm = parseFrontmatter(raw);
       const str = (k: string) => (typeof fm[k] === "string" ? (fm[k] as string) : undefined);
       const state = DIRECTIVE_STATES.includes(str("state") as DirectiveState)
@@ -381,6 +442,7 @@ function readDirectives(projectPath: string): Directive[] {
         branch: str("branch"),
         commits: str("commits"),
         age: str("age") ?? relAge(Date.now() - statSync(filePath).mtimeMs),
+        merged,
         sessions: [] as Session[],
         steers: parseSteers(raw),
       };
@@ -416,8 +478,9 @@ export function appendSteer(projectPath: string, code: string, text: string): St
 }
 
 function buildProject(def: ProjectDef): Project {
-  const sessions = listSessions(def.path);
-  const directives = readDirectives(def.path);
+  const worktrees = listWorktrees(def.path);
+  const sessions = listSessions(def.path, worktrees);
+  const directives = readDirectives(def.path, worktrees);
   // A directive's run is the claiming session (an orchestrator that spawned phase
   // subagents for this code) plus exactly those subagents — not every session that
   // happens to mention the code.

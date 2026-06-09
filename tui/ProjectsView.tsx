@@ -10,7 +10,7 @@ import type {
   SubAgent,
 } from "../shared/project.ts";
 import { P } from "./theme.ts";
-import { relativeTime } from "./format.ts";
+import { relativeTime, relativeAgo } from "./format.ts";
 import { Panel } from "./Panel.tsx";
 
 const RAIL_W = 32;
@@ -153,11 +153,10 @@ function ProjectRow({
   selected: boolean;
   now: number;
 }) {
-  const active = countBy(project.sessions, "run");
-  const wait = countBy(project.sessions, "wait");
-  const block = countBy(project.sessions, "block");
+  const activeDirs = project.directives.filter((d) => d.state === "active").length;
+  const pendingDirs = project.directives.filter((d) => d.state === "pending").length;
   const last = project.sessions[0]?.last_active;
-  const head: SessionStatus = block ? "block" : wait ? "wait" : active ? "run" : "done";
+  const head: SessionStatus = activeDirs ? "run" : pendingDirs ? "wait" : "done";
 
   return (
     <Box
@@ -179,30 +178,15 @@ function ProjectRow({
             {project.name}
           </Text>
         </Box>
-        <Text color={P.faint}>{last ? relativeTime(last, now) : "—"}</Text>
       </Box>
       <Box paddingLeft={2} marginTop={0}>
-        <Text color={P.dim} wrap="truncate">
-          {active} active
-          {wait ? <Text color={P.news}> · {wait} wait</Text> : null}
-          {block ? <Text color={P.down}> · {block} blk</Text> : null}
-        </Text>
+        <Box flexShrink={0}>
+          <Text color={activeDirs ? P.accent : P.dim}>{activeDirs} active</Text>
+        </Box>
         <Box flexGrow={1} />
-        <SessionDots sessions={project.sessions} />
+        <Text color={P.faint}>{last ? relativeAgo(last, now) : "no activity"}</Text>
       </Box>
     </Box>
-  );
-}
-
-function SessionDots({ sessions }: { sessions: Session[] }) {
-  return (
-    <Text>
-      {sessions.slice(0, 6).map((s, i) => (
-        <Text key={i} color={SS[s.status].c}>
-          ·
-        </Text>
-      ))}
-    </Text>
   );
 }
 
@@ -394,6 +378,12 @@ function DirCard({
   const step = directive.step ?? 0;
   const pendingSteers = directive.steers.filter((st) => st.status !== "addressed").length;
   const sessionCount = directive.sessions.length;
+  const badge =
+    directive.state === "done"
+      ? directive.merged
+        ? { g: d.g, c: P.x, label: "merged" }
+        : { g: d.g, c: P.up, label: "committed" }
+      : d;
   return (
     <Box
       flexDirection="column"
@@ -405,7 +395,7 @@ function DirCard({
     >
       <Box>
         <Box flexShrink={0} width={2}>
-          <Text color={selected ? P.accent : d.c} bold>{selected ? "▌" : d.g}</Text>
+          <Text color={selected ? P.accent : badge.c} bold>{selected ? "▌" : badge.g}</Text>
         </Box>
         {directive.code ? (
           <Box flexShrink={0}>
@@ -425,7 +415,7 @@ function DirCard({
           {directive.steers.length ? (
             <Text color={pendingSteers ? P.news : P.faint}>○ {pendingSteers || directive.steers.length}  </Text>
           ) : null}
-          <Text color={d.c} bold={selected || active}>[ {d.g} {d.label} ]</Text>
+          <Text color={badge.c} bold={selected || active}>[ {badge.g} {badge.label} ]</Text>
         </Box>
       </Box>
 

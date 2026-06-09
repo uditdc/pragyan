@@ -121,4 +121,5 @@ An agent addresses each pending steer and rewrites it as its steering memory:
   - [addressed] <input>
     ↳ <note on what the agent did to address it>
 -->
-- [pending] resolve merge conflicts with main @479970958df67e3116c654872516e7663c41dcbe
+- [addressed] resolve merge conflicts with main @479970958df67e3116c654872516e7663c41dcbe
+    ↳ Merged main into the branch; the only conflict was in tui/ProjectsView.tsx (DirCard). Reconciled all three hunks to keep both intents: kept the branch's UI polish (pendingSteers/sessionCount chips ◇/○, selected accent gutter ▌, white border/title, ProgressMeter) AND adopted main's `badge` (merged/committed/done) read from the new `Directive.merged` field in shared/project.ts. The badge glyph/color/label now drive the gutter and the bracket label so a done directive renders "merged"/"committed". ProjectRow auto-merged to main's directive-count + relativeAgo version. typecheck passes clean.

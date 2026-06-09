@@ -19,8 +19,14 @@ The frontmatter `state` + `phase` are the lock. `phase` is the current sub-state
 an `active` directive: `assessment` → `work` → `review` (blank when idle/pending/done).
 A phase is in progress iff `state: active` and `phase` names it.
 
-1. Read `.agents/directives/DIR-NNN-*.md`: `state`, `phase`, `step`, `objectives`,
-   `## Plan`, `## Verification`, `branch`, and the `## Steering` list.
+**Status lives on the branch.** A directive's live status is the `.md` *on its branch*
+(read from the worktree working copy, then the committed branch, then `main` — exactly
+what the CLI shows). So read status from there, and write every update there — never
+edit the directive on `main` during a run. `main` only updates when the PR merges.
+
+1. Read the directive's live status from its branch/worktree (fall back to
+   `main`'s `.agents/directives/DIR-NNN-*.md` to learn the `branch`): `state`, `phase`,
+   `step`, `objectives`, `## Plan`, `## Verification`, and the `## Steering` list.
 2. **Decide what to do — never duplicate a phase:**
    - `state: done` → nothing to do; report.
    - `state: active`, `phase` set → an orchestrator already owns this phase. **Do not
@@ -30,9 +36,10 @@ A phase is in progress iff `state: active` and `phase` names it.
      and stop — *unless* the owner has clearly died (its phase subagent idle well past
      `ACTIVE_MS` with the phase incomplete), in which case treat it as a **resume** and
      continue that same phase.
-   - `state: pending` (or a resume per above) → **claim it**: set `state: active`,
-     `phase: assessment`, `session: @run`, `step: 0` in the frontmatter **before**
-     spawning anything. That write is the lock a second runner will see.
+   - `state: pending` (or a resume per above) → **claim it**: create the worktree (§1),
+     then on the worktree's copy set `state: active`, `phase: assessment`,
+     `session: @run`, `step: 0` and **commit it to the branch** before spawning
+     anything. That commit is the lock a second runner will see on the branch.
 
 Advance `phase` only when a phase finishes (§3), so the field always reflects exactly
 what is running. One orchestrator owns a directive at a time; the phase subagents it
@@ -47,9 +54,10 @@ Create a dedicated worktree on the directive's branch (outside the main checkout
 git worktree add ../.worktrees/DIR-NNN dir/DIR-NNN-<slug>   # add -b if the branch is new
 ```
 
-You (the orchestrator) are the **claiming session**. Every phase subagent below
-operates inside this worktree (edits, build, commit, push, PR all target it) so the
-git work stays isolated on the directive's branch.
+You (the orchestrator) are the **claiming session**. Every phase subagent operates
+inside this worktree (edits, build, commit, push, PR) **and** updates the directive
+`.md` here, committing status to the branch — so the git work and the live status stay
+together on the directive's branch, which is what the CLI reads.
 
 ## 2 · Spawning a phase as a subagent
 
@@ -111,12 +119,13 @@ subagent to handle it.
 
 When the review loop clears the threshold:
 
-1. Set `state: done`, clear `phase:`, and set `commits: <merged SHA / PR ref>`.
+1. On the worktree copy, set `state: done`, clear `phase:`, set `commits: <SHA / PR ref>`,
+   and commit it to the branch (the PR merge carries it to `main`).
 2. Ensure every steer is `[addressed]` (or explicitly deferred with a note).
-3. Remove the worktree: `git worktree remove ../.worktrees/DIR-NNN`.
+3. After the PR merges, remove the worktree: `git worktree remove ../.worktrees/DIR-NNN`.
 4. Report: the PR link, what shipped, and any deferred items.
 
-## Status ownership (write to the `.md`)
+## Status ownership (write to the directive `.md` on the worktree, commit to the branch)
 
 | transition | when |
 |---|---|
