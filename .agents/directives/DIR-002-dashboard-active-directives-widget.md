@@ -2,7 +2,7 @@
 code: DIR-002
 title: Dashboard active-directives widget replaces top posts
 state: active
-phase: work
+phase: review
 objectives:
   - Thread the projects array into DashboardView so the rail can read directives
   - Add a WorkingWidget that lists the most relevant active directives across projects
