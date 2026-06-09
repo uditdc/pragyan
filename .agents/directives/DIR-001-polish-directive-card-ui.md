@@ -1,7 +1,7 @@
 ---
 code: DIR-001
 title: Polish projects-view directive card UI
-state: pending
+state: done
 phase:
 objectives:
   - Add a step-progress meter line for active directives (filled/empty cells + step n/N)
@@ -9,10 +9,10 @@ objectives:
   - Strengthen visual emphasis on the selected directive card vs. unselected ones
   - Tighten the nested SESSIONS and STEERING blocks (status dots, alignment, pending-steer emphasis)
   - Confirm layout holds across all states with many directives; tsc + lint clean
-step:
-session:
+step: 5
+session: @run
 branch: dir/DIR-001-polish-directive-card-ui
-commits:
+commits: PR#2 8b6f9a6 (open)
 ---
 
 # Direction
