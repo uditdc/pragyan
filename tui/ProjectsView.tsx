@@ -278,7 +278,9 @@ function NestedSessionRow({ session, now }: { session: Session; now: number }) {
     <Box flexDirection="column" flexShrink={0}>
       <Box>
         <Box flexShrink={0}>
-          <Text color={s.c}>{s.g} </Text>
+          <Box width={2} flexShrink={0}>
+            <Text color={s.c}>{s.g}</Text>
+          </Box>
           <Text color={P.fg}>{session.model}</Text>
           {session.phase ? (
             <Text color={PHASE[session.phase].c}> [{PHASE[session.phase].label}]</Text>
@@ -345,6 +347,19 @@ function DirectivesList({
   );
 }
 
+const METER_W = 16;
+
+function StepMeter({ step, steps }: { step: number; steps: number }) {
+  const filled = steps === 0 ? 0 : Math.min(METER_W, Math.round((step / steps) * METER_W));
+  return (
+    <Box flexShrink={0} paddingLeft={2} marginTop={1}>
+      <Text color={P.accent}>{"█".repeat(filled)}</Text>
+      <Text color={P.faint}>{"░".repeat(METER_W - filled)}</Text>
+      <Text color={P.dim}>  step {step}/{steps}</Text>
+    </Box>
+  );
+}
+
 // Full-width work-order card — mirrors the design's DirCardFull: a framed box
 // with a left accent border in the lifecycle colour, a state badge, the full
 // plan with checked-off steps, and an assignment footer.
@@ -361,6 +376,9 @@ function DirCard({
   const active = directive.state === "active";
   const steps = directive.steps ?? directive.objectives.length;
   const step = directive.step ?? 0;
+  const sessionCount = directive.sessions.length;
+  const steerCount = directive.steers.length;
+  const steerOpen = directive.steers.some((s) => s.status !== "addressed");
   return (
     <Box
       flexDirection="column"
@@ -368,10 +386,12 @@ function DirCard({
       marginBottom={1}
       paddingX={1}
       borderStyle="round"
-      borderColor={selected ? P.accent : active ? P.accent : P.rule}
+      borderColor={selected ? P.accent : P.rule}
     >
       <Box>
-        <Text color={d.c}>{d.g} </Text>
+        <Box flexShrink={0} width={2}>
+          <Text color={P.accent}>{selected || active ? "▌" : " "}</Text>
+        </Box>
         {directive.code ? (
           <Box flexShrink={0}>
             <Text color={P.accent} bold>
@@ -381,14 +401,28 @@ function DirCard({
           </Box>
         ) : null}
         <Box flexGrow={1} minWidth={0}>
-          <Text color={P.fg} bold wrap="truncate">
+          <Text color={selected ? P.white : P.fg} bold={selected || active} wrap="truncate">
             {directive.title}
           </Text>
         </Box>
+        {sessionCount || steerCount ? (
+          <Box flexShrink={0} marginLeft={1}>
+            {sessionCount ? <Text color={P.x}>◇ {sessionCount}</Text> : null}
+            {steerCount ? (
+              <Text color={steerOpen ? P.news : P.faint}>
+                {sessionCount ? "  " : ""}○ {steerCount}
+              </Text>
+            ) : null}
+          </Box>
+        ) : null}
         <Box flexShrink={0} marginLeft={1}>
-          <Text color={d.c}>[ {d.label} ]</Text>
+          <Text color={d.c} bold>
+            [ {d.g} {d.label} ]
+          </Text>
         </Box>
       </Box>
+
+      {active ? <StepMeter step={step} steps={steps} /> : null}
 
       {directive.state === "empty" ? (
         <Box paddingLeft={2} marginTop={1}>
@@ -433,13 +467,15 @@ function DirCard({
         </Box>
       ) : null}
 
-      {directive.session || directive.branch || directive.age || active ? (
+      {directive.session ||
+      directive.branch ||
+      directive.age ||
+      (directive.state === "done" && directive.commits) ? (
         <Box paddingLeft={2} marginTop={1}>
           <Box flexGrow={1} minWidth={0}>
             <Text wrap="truncate">
               {directive.session ? <Text color={P.x}>{directive.session}  </Text> : null}
               {directive.branch ? <Text color={P.faint}>⎇ {directive.branch}</Text> : null}
-              {active ? <Text color={P.accent}>  step {step}/{steps}</Text> : null}
               {directive.state === "done" && directive.commits ? (
                 <Text color={P.up}>  {directive.commits}</Text>
               ) : null}
@@ -468,15 +504,19 @@ function DirCard({
         )}
       </Box>
 
-      {directive.steers.length > 0 ? (
+      {steerCount > 0 ? (
         <Box flexDirection="column" paddingLeft={2} marginTop={1}>
-          <Text color={P.faint}>STEERING · {directive.steers.length}</Text>
-          {directive.steers.map((st, i) => (
+          <Text color={steerOpen ? P.news : P.faint}>STEERING · {steerCount}</Text>
+          {directive.steers.map((st, i) => {
+            const muted = st.status === "addressed";
+            return (
             <Box key={i} flexDirection="column">
               <Box>
-                <Text color={STEER[st.status].c}>{STEER[st.status].g} </Text>
+                <Box width={2} flexShrink={0}>
+                  <Text color={STEER[st.status].c}>{STEER[st.status].g}</Text>
+                </Box>
                 <Box flexGrow={1} minWidth={0}>
-                  <Text color={st.status === "addressed" ? P.dim : P.fg} wrap="truncate">
+                  <Text color={muted ? P.faint : P.white} bold={!muted} wrap="truncate">
                     {st.text}
                   </Text>
                 </Box>
@@ -492,7 +532,8 @@ function DirCard({
                 </Box>
               ) : null}
             </Box>
-          ))}
+            );
+          })}
         </Box>
       ) : null}
     </Box>
