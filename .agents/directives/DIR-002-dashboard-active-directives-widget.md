@@ -1,7 +1,7 @@
 ---
 code: DIR-002
 title: Dashboard active-directives widget replaces top posts
-state: pending
+state: done
 phase:
 objectives:
   - Thread the projects array into DashboardView so the rail can read directives
@@ -9,10 +9,10 @@ objectives:
   - Fall back to pending / most-recently-active directives when none are active
   - Replace PostsWidget with WorkingWidget in the rail and delete PostsWidget + CompactPost
   - Verify in the TUI that the new section renders and TOP POSTS is gone
-step:
-session:
+step: 5
+session: @run
 branch: dir/DIR-002-dashboard-active-directives-widget
-commits:
+commits: PR#3 9c5d5dc (open)
 ---
 
 # Direction

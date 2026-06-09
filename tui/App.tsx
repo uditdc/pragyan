@@ -459,7 +459,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           newSince={summaryNew}
           index={summaries.length ? Math.min(summaryIdx, summaries.length - 1) : 0}
           total={summaries.length}
-          posts={posts}
+          projects={projects}
           markets={markets}
           uptime={uptime}
           regenerating={regenerating}
