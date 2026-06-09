@@ -10,11 +10,13 @@ and stays referenced across development. This is the spec for a future
   `session` / `branch` / `commits` (frontmatter) and the `## Steering` log hold all
   lifecycle status. Every actor *writes* the file; the API/TUI only *read* it.
 - **`DIR-NNN` is the join key.** It threads the directive file ↔ its branch
-  `dir/DIR-NNN-…` ↔ every session's opening prompt ↔ the PR ↔ commit messages.
+  `dir/DIR-NNN-…` ↔ every phase subagent's tag ↔ the PR ↔ commit messages.
   Given any one, you can find the rest.
-- **Phases run as real spawned `claude` sessions**, not in-process subagents — only
-  sessions that exist as their own `~/.claude/projects/**/*.jsonl` transcript
-  mentioning the code are discovered and shown under the directive in the TUI.
+- **Phases run as `Task` subagents of one orchestrator** (the "claiming session"),
+  not separate `claude` processes. The TUI shows **the claiming session and its phase
+  subagents** under the directive — not every session that mentions the code. A
+  subagent is matched by its `[phase] DIR-NNN` description tag (read from its tiny
+  `agent-*.meta.json`), so discovery is cheap.
 
 ## Components
 
@@ -22,7 +24,7 @@ and stays referenced across development. This is the spec for a future
 |---|---|---|
 | `create-directive` skill | authors the `DIR-NNN` file | built |
 | directive `.md` | the work-order **and** the status store | built |
-| TUI / `api/projects.ts` | read-only view; discovers sessions by code | built |
+| TUI / `api/projects.ts` | read-only view; shows the claiming session + its subagents | built |
 | `run-directive` skill | the action loop / executor (this doc) | built |
 | pickup routine / `/loop` | scans for `state: pending`, runs `run-directive` | future |
 
@@ -32,24 +34,20 @@ flow in one place so auto-pickup and manual `/run-directive DIR-NNN` share it.
 ## Lifecycle
 
 ```
-run-directive DIR-NNN
+run-directive DIR-NNN  (the orchestrator session = the claiming session)
   0. read .agents/directives/DIR-NNN-*.md   (objectives, plan, verification, steers)
   1. worktree:  git worktree add <wt> -b dir/DIR-NNN-<slug>
-  2. status:    state→active, session→<handle>, step→0          (write the .md)
-  3. assessment session  → review plan/directive, surface issues to resolve
-  4. work session        → implement objectives, push branch, open PR (title: DIR-NNN …)
+  2. status:    state→active, phase→assessment, step→0          (write the .md)
+  3. assessment subagent → review plan/directive, surface issues to resolve
+  4. work subagent       → implement in <wt>, push branch, open PR (title: DIR-NNN …)
   5. review loop         → review PR → fix → re-review until 0 critical/high issues
   6. status:    state→done, commits→<sha/PR>, steers→addressed   (write the .md)
 ```
 
-Each phase is one spawned session, run so its transcript is discoverable and its
-prompt opens with the code and phase, e.g. `[assessment] DIR-NNN — …`:
-
-```bash
-claude -p "[<phase>] DIR-NNN — <role instructions, pointer to the directive file>" \
-  --append-system-prompt "<phase system prompt>"
-# (spawn pattern already used in api/chat.ts)
-```
+Each phase is one `Task` subagent whose **`description` is `[<phase>] DIR-NNN — …`**.
+That tag is the discovery key: `api/projects.ts` reads each subagent's
+`agent-*.meta.json`, matches the code, and lists it (with its phase) under the
+directive beneath the claiming session — no transcript scan needed.
 
 ## Status ownership
 
@@ -77,30 +75,26 @@ directives).
 - The work session pushes the branch and opens a PR whose title/body carry `DIR-NNN`.
 - The review loop operates on that PR; `commits` records the merged SHA / PR ref.
 
-## Decisions
+## Decisions (all resolved)
 
-1. **Session cwd vs. discovery path — RESOLVED (b).** Discovery now scans the project's
-   main checkout *and every linked git worktree* (`sessionRoots` in `api/projects.ts`,
-   via `git worktree list`). So phase sessions run with `cwd = <worktree>` — correct
-   `gitBranch`, isolated checkout — and are still discovered and matched by code.
-2. **Concurrency / phase locking — RESOLVED.** The `phase` field makes the lock
-   phase-aware: a runner refuses to start (or restart) a phase that `state: active` +
-   `phase` says is already running — no duplicate assessment or work. A `pending`
-   directive is claimed by writing `state: active, phase: assessment` before spawning.
-3. **Live steering — RESOLVED.** A steer added mid-phase is **not** a new session: each
-   in-flight phase re-reads `## Steering` on every loop and addresses new `[pending]`
-   steers before finishing (see the run-directive skill). Steers landing between phases
-   are picked up by the next phase.
-4. **Failure / handoff — RESOLVED.** A stalled or blocked phase records a `[pending]`
-   steer, leaves `state: active` at its current `phase`, and hands back to the user; a
-   dead owner (worktree session idle past `ACTIVE_MS`) is treated as a resume of that
-   same phase.
-
-## Open decisions (resolve when building further)
-
-5. **Phase labelling in the TUI.** Sessions carry the `[assessment|work|review]` tag in
-   their opening prompt; discovery could parse it and label the nested session under the
-   directive — small `api/projects.ts` + UI addition, optional.
+1. **Phases = subagents; UI = claiming session + its subagents.** Each phase is a `Task`
+   subagent of the orchestrator, tagged `[phase] DIR-NNN` in its description. `api/projects.ts`
+   reads each session's `subagents/agent-*.meta.json`, and a directive's run = the
+   session(s) whose subagents reference its code, with those subagents nested under it —
+   not every code-mentioning session. (`sessionRoots` still scans the worktree paths so a
+   worktree-launched orchestrator is found.)
+2. **Concurrency / phase locking.** The `phase` field makes the lock phase-aware: a runner
+   refuses to start (or restart) a phase that `state: active` + `phase` says is already
+   running. A `pending` directive is claimed by writing `state: active, phase: assessment`
+   before spawning.
+3. **Live steering.** A steer added mid-phase is absorbed by the in-flight subagent: each
+   re-reads `## Steering` every loop and addresses new `[pending]` steers before finishing.
+   Steers between phases are taken by the next phase.
+4. **Failure / handoff.** A stalled or blocked phase records a `[pending]` steer, leaves
+   `state: active` at its current `phase`, and hands back to the user; a dead owner (phase
+   subagent idle past `ACTIVE_MS`) is treated as a resume of that same phase.
+5. **Phase labelling in the TUI.** Each subagent shows its phase chip (`assess`/`work`/
+   `review`), parsed from the description tag, in the nested session row.
 
 ## Cross-references
 

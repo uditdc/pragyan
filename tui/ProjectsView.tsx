@@ -7,6 +7,7 @@ import type {
   SessionPhase,
   SessionStatus,
   SteerStatus,
+  SubAgent,
 } from "../shared/project.ts";
 import { P } from "./theme.ts";
 import { relativeTime } from "./format.ts";
@@ -270,8 +271,8 @@ function ProjectHeader({ project }: { project: Project }) {
   );
 }
 
-// One associated session inside a directive card — compact: status · model ·
-// branch · age, with the live last-activity beneath.
+// The claiming (orchestrator) session for a directive, with its phase subagents
+// nested beneath — status · model · branch · age, then one row per subagent.
 function NestedSessionRow({ session, now }: { session: Session; now: number }) {
   const s = SS[session.status];
   return (
@@ -280,9 +281,6 @@ function NestedSessionRow({ session, now }: { session: Session; now: number }) {
         <Box flexShrink={0}>
           <Text color={s.c}>{s.g} </Text>
           <Text color={P.fg}>{session.model}</Text>
-          {session.phase ? (
-            <Text color={PHASE[session.phase].c}> [{PHASE[session.phase].label}]</Text>
-          ) : null}
         </Box>
         <Box flexGrow={1} minWidth={0}>
           {session.branch ? (
@@ -297,13 +295,31 @@ function NestedSessionRow({ session, now }: { session: Session; now: number }) {
           <Text color={P.faint}>{relativeTime(session.last_active, now)}</Text>
         </Box>
       </Box>
-      <Box paddingLeft={2}>
-        <Text color={P.faint}>↳ </Text>
-        <Box flexGrow={1} minWidth={0}>
-          <Text color={P.dim} wrap="truncate">
-            {session.last_activity}
-          </Text>
-        </Box>
+      {session.subagents.map((a) => (
+        <SubAgentRow key={a.id} agent={a} now={now} />
+      ))}
+    </Box>
+  );
+}
+
+function SubAgentRow({ agent, now }: { agent: SubAgent; now: number }) {
+  const s = SS[agent.status];
+  return (
+    <Box paddingLeft={2}>
+      <Box flexShrink={0}>
+        <Text color={s.c}>↳ {s.g} </Text>
+        {agent.phase ? (
+          <Text color={PHASE[agent.phase].c}>[{PHASE[agent.phase].label}] </Text>
+        ) : null}
+        <Text color={P.dim}>{agent.agent_type}</Text>
+      </Box>
+      <Box flexGrow={1} minWidth={0}>
+        <Text color={P.dim} wrap="truncate">
+          {agent.description ? ` · ${agent.description}` : ""}
+        </Text>
+      </Box>
+      <Box flexShrink={0} marginLeft={1}>
+        <Text color={P.faint}>{relativeTime(agent.last_active, now)}</Text>
       </Box>
     </Box>
   );

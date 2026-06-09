@@ -1,12 +1,13 @@
 ---
-description: Run a directive (DIR-NNN) through its lifecycle — assessment → work → review loop → done — spawning real Claude Code sessions on the directive's git worktree and updating its status. Use when the user wants to start/run/execute/work a directive, or pick up the next pending one.
+description: Run a directive (DIR-NNN) through its lifecycle — assessment → work → review loop → done — spawning Task subagents on the directive's git worktree and updating its status. Use when the user wants to start/run/execute/work a directive, or pick up the next pending one.
 ---
 
 # Run a directive
 
-You are the **orchestrator** for one directive. You drive it through its phases by
-spawning real `claude` sessions on its git worktree and writing status back to the
-directive `.md` (the single source of truth). The full design is in
+You are the **orchestrator** (the "claiming session") for one directive. You drive it
+through its phases by spawning **`Task` subagents** that operate on its git worktree, and
+you write status back to the directive `.md` (the single source of truth). The TUI shows
+you and your phase subagents under the directive. The full design is in
 `.agents/run-loop.md` — follow it; this skill is its operational checklist.
 
 Argument: a `DIR-NNN` code. If none is given, pick the oldest directive with
@@ -22,19 +23,19 @@ A phase is in progress iff `state: active` and `phase` names it.
    `## Plan`, `## Verification`, `branch`, and the `## Steering` list.
 2. **Decide what to do — never duplicate a phase:**
    - `state: done` → nothing to do; report.
-   - `state: active`, `phase` set → a session already owns this phase. **Do not start
-     it (or any earlier phase) again.** Specifically: if `phase: assessment`, don't
-     start another assessment; if `phase: work`, don't start assessment or a second
-     work; if `phase: review`, don't restart work. Report "already at <phase>" and
-     stop — *unless* the owning session has clearly died (its worktree session has
-     been idle well past `ACTIVE_MS` with the phase incomplete), in which case treat
-     it as a **resume** and continue that same phase.
+   - `state: active`, `phase` set → an orchestrator already owns this phase. **Do not
+     start it (or any earlier phase) again.** Specifically: if `phase: assessment`,
+     don't start another assessment; if `phase: work`, don't start assessment or a
+     second work; if `phase: review`, don't restart work. Report "already at <phase>"
+     and stop — *unless* the owner has clearly died (its phase subagent idle well past
+     `ACTIVE_MS` with the phase incomplete), in which case treat it as a **resume** and
+     continue that same phase.
    - `state: pending` (or a resume per above) → **claim it**: set `state: active`,
      `phase: assessment`, `session: @run`, `step: 0` in the frontmatter **before**
      spawning anything. That write is the lock a second runner will see.
 
 Advance `phase` only when a phase finishes (§3), so the field always reflects exactly
-what is running. One orchestrator owns a directive at a time; the phase sessions it
+what is running. One orchestrator owns a directive at a time; the phase subagents it
 spawns run in sequence, so there is never duplicate assessment/work within a run, and
 a second runner is bounced by the lock above.
 
@@ -46,54 +47,55 @@ Create a dedicated worktree on the directive's branch (outside the main checkout
 git worktree add ../.worktrees/DIR-NNN dir/DIR-NNN-<slug>   # add -b if the branch is new
 ```
 
-All phase sessions run with `cwd` = this worktree. Discovery scans worktree paths,
-so their transcripts are matched back to the directive by code (`api/projects.ts`).
+You (the orchestrator) are the **claiming session**. Every phase subagent below
+operates inside this worktree (edits, build, commit, push, PR all target it) so the
+git work stays isolated on the directive's branch.
 
-## 2 · Spawning a phase session
+## 2 · Spawning a phase as a subagent
 
-Each phase is one spawned, non-interactive `claude` run. **The prompt must open with
-`[<phase>] DIR-NNN`** so the session is discoverable (and phase-labelable) under the
-directive. Run it from the worktree:
+Each phase is one **`Task` subagent** you spawn — not a separate `claude` process.
+**The subagent's `description` must be `[<phase>] DIR-NNN — <short summary>`.** That tag
+is how the TUI finds this run: discovery reads each subagent's meta and lists it (with
+its phase) under the directive, beneath you, the claiming session. So:
 
-```bash
-( cd ../.worktrees/DIR-NNN && claude -p "[<phase>] DIR-NNN — <role + instructions>. \
-  Directive: .agents/directives/DIR-NNN-<slug>.md (read objectives, ## Plan, ## Verification, ## Steering)." \
-  --permission-mode auto )
-```
+- `description`: `"[work] DIR-NNN — implement objectives 2–3"`
+- `prompt`: the role + instructions, the **absolute worktree path** to operate in, a
+  pointer to `.agents/directives/DIR-NNN-<slug>.md` (read objectives, `## Plan`,
+  `## Verification`, `## Steering`), and the live-steering instruction below.
 
-`--permission-mode auto` ("auto mode on") auto-approves all tool use — edits and Bash
-(git/gh/npm) alike, with a background safety classifier — so phase sessions run
-unattended without an allow-list. Capture stdout to decide the next step. Read-only
-phases (assessment, review) may use `--permission-mode plan` instead.
+One phase subagent runs at a time; you advance `phase` between them, so there is never
+duplicate assessment/work. Read each subagent's result to decide the next step.
 
 ## 3 · Phases
 
-Set `phase` as each one starts (it is the lock §0 checks) and advance it only when the
-phase finishes — so the field always reflects exactly what is running. Every phase
-session is told to **re-read `## Steering` on each loop and fold in new steers** (see
-"Live steering" below), so a steer added mid-flight is absorbed by the running session,
+Set `phase` as each subagent starts (it is the lock §0 checks) and advance it only when
+the phase finishes — so the field always reflects exactly what is running. Every phase
+subagent is told to **re-read `## Steering` on each loop and fold in new steers** (see
+"Live steering" below), so a steer added mid-flight is absorbed by the running subagent,
 never by a duplicate.
 
-1. **Assessment** (`phase: assessment`) — spawn a session to review the directive +
-   `## Plan` against the codebase and list issues/risks/ambiguities. If it finds a
-   *blocking* problem, append a `[pending]` steer and pause — report to the user rather
-   than guess. Otherwise set `phase: work` and continue.
+1. **Assessment** (`phase: assessment`) — a subagent (`description: "[assessment]
+   DIR-NNN — …"`) reviews the directive + `## Plan` against the codebase and lists
+   issues/risks/ambiguities. If it finds a *blocking* problem, append a `[pending]`
+   steer and pause — report to the user rather than guess. Otherwise set `phase: work`.
 
-2. **Work** (`phase: work`) — spawn a session to implement the objectives on the
-   worktree: make the changes, satisfy `## Verification`, commit, push the branch, and
-   open a PR via `gh pr create` (title and body must contain `DIR-NNN`). Update `step`
-   as objectives complete. When the PR is open, set `phase: review`.
+2. **Work** (`phase: work`) — a subagent (`description: "[work] DIR-NNN — …"`) implements
+   the objectives **in the worktree**: makes the changes, satisfies `## Verification`,
+   commits, pushes the branch, and opens a PR via `gh pr create` (title and body contain
+   `DIR-NNN`). Update `step` as objectives complete. When the PR is open, set
+   `phase: review`.
 
 3. **Review loop** (`phase: review`) — repeat until clean (cap at ~5 iterations):
-   - Spawn a review session: review the PR for correctness/quality, emitting findings
-     tagged by severity (**critical / high / medium / low**).
-   - If any **critical or high** remain → spawn a fix session (still `phase: review`) to
-     address them, push, and re-review. Otherwise exit the loop. Defer medium/low as
-     steers or a follow-up directive (note them; don't block on them).
+   - A review subagent (`description: "[review] DIR-NNN — …"`) reviews the PR for
+     correctness/quality, emitting findings tagged by severity (**critical / high /
+     medium / low**).
+   - If any **critical or high** remain → spawn a fix subagent (still `phase: review`,
+     `description: "[review] DIR-NNN — fix …"`) to address them, push, and re-review.
+     Otherwise exit the loop. Defer medium/low as steers or a follow-up directive.
 
 ## Live steering (pick up steers during a phase)
 
-A new `[pending]` steer can land while a phase runs. Do **not** start a separate session
+A new `[pending]` steer can land while a phase runs. Do **not** spawn a separate subagent
 for it — the in-flight phase absorbs it. Each assessment/work/review prompt must include:
 
 > Before finishing, re-read the directive's `## Steering` section. For every `[pending]`
@@ -101,9 +103,9 @@ for it — the in-flight phase absorbs it. Each assessment/work/review prompt mu
 > `↳ <note>`. New steers may arrive while you run, so check again at the end of each
 > iteration; only finish once no `[pending]` steer remains.
 
-If a steer lands after a phase has fully ended (no session running), the next phase
-picks it up; if every phase is already `done`, the orchestrator starts a short work
-session to handle it.
+If a steer lands after a phase has fully ended (no subagent running), the next phase
+picks it up; if every phase is already `done`, the orchestrator spawns a short work
+subagent to handle it.
 
 ## 4 · Done
 

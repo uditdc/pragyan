@@ -12,6 +12,7 @@ import type {
   SessionStatus,
   Steer,
   SteerStatus,
+  SubAgent,
 } from "../shared/project.ts";
 import type { Config } from "./config.ts";
 
@@ -120,13 +121,59 @@ function userText(line: JsonlLine): string | null {
   return trimmed.split("\n")[0].slice(0, 96);
 }
 
-// Orchestrator-spawned phase sessions open with `[assessment|work|review] DIR-NNN — …`.
-// Pull the phase tag and strip it (and the code) so the task reads cleanly.
-function splitPhase(task: string): { phase: SessionPhase | null; task: string } {
-  const m = task.match(/^\[(assessment|work|review)\]\s*/i);
-  if (!m) return { phase: null, task: task.slice(0, 64) };
-  const rest = task.slice(m[0].length).replace(/^DIR-\d+\s*[—–-]+\s*/i, "");
-  return { phase: m[1].toLowerCase() as SessionPhase, task: rest.slice(0, 64) };
+// The run-directive skill runs each phase as a Task subagent and tags its
+// description `[phase] DIR-NNN — …`, so phase + code come straight from the tiny
+// meta file. Pull them and strip the tags for a clean label.
+function phaseAndCodes(desc: string): {
+  phase: SessionPhase | null;
+  codes: string[];
+  text: string;
+} {
+  const m = desc.match(/\[(assessment|work|review)\]/i);
+  const codes = [...new Set(desc.match(/\bDIR-\d{3,}\b/g) ?? [])];
+  const text = desc
+    .replace(/\[(assessment|work|review)\]\s*/i, "")
+    .replace(/^DIR-\d+\s*[—–-]+\s*/i, "")
+    .trim();
+  return { phase: m ? (m[1].toLowerCase() as SessionPhase) : null, codes, text };
+}
+
+// Subagents of a session live at <session-id>/subagents/agent-<id>.{jsonl,meta.json}.
+function readSubagents(sessionFilePath: string): SubAgent[] {
+  const dir = `${sessionFilePath.replace(/\.jsonl$/, "")}/subagents`;
+  let metas: string[];
+  try {
+    metas = readdirSync(dir).filter((f) => f.endsWith(".meta.json"));
+  } catch {
+    return [];
+  }
+  const out: SubAgent[] = [];
+  for (const mf of metas) {
+    let meta: { agentType?: string; description?: string };
+    try {
+      meta = JSON.parse(readFileSync(join(dir, mf), "utf8")) as typeof meta;
+    } catch {
+      continue;
+    }
+    const id = mf.replace(/\.meta\.json$/, "");
+    let mtime = 0;
+    try {
+      mtime = statSync(join(dir, `${id}.jsonl`)).mtimeMs;
+    } catch {
+      /* transcript may be absent */
+    }
+    const { phase, codes, text } = phaseAndCodes(String(meta.description ?? ""));
+    out.push({
+      id,
+      agent_type: meta.agentType ?? "agent",
+      description: text || String(meta.description ?? ""),
+      phase,
+      codes,
+      status: Date.now() - mtime < ACTIVE_MS ? "run" : "done",
+      last_active: new Date(mtime).toISOString(),
+    });
+  }
+  return out;
 }
 
 function parseSession(filePath: string, id: string): Session | null {
@@ -174,19 +221,16 @@ function parseSession(filePath: string, id: string): Session | null {
   const ageMs = Date.now() - mtime;
   const status: SessionStatus =
     ageMs < ACTIVE_MS ? (lastRole === "user" ? "wait" : "run") : "done";
-  const { phase, task: cleanTask } = splitPhase(task);
-
   return {
     id,
     model: shortenModel(model),
-    task: cleanTask || "session",
+    task: task ? task.slice(0, 64) : "session",
     branch,
     status,
-    phase,
     iter,
     last_active: lastTs ?? new Date(mtime).toISOString(),
     last_activity: lastActivity || "—",
-    dir_codes: [...new Set(raw.match(/\bDIR-\d{3,}\b/g) ?? [])],
+    subagents: readSubagents(filePath),
   };
 }
 
@@ -374,8 +418,18 @@ export function appendSteer(projectPath: string, code: string, text: string): St
 function buildProject(def: ProjectDef): Project {
   const sessions = listSessions(def.path);
   const directives = readDirectives(def.path);
+  // A directive's run is the claiming session (an orchestrator that spawned phase
+  // subagents for this code) plus exactly those subagents — not every session that
+  // happens to mention the code.
   for (const d of directives) {
-    d.sessions = d.code ? sessions.filter((s) => s.dir_codes.includes(d.code)) : [];
+    d.sessions = d.code
+      ? sessions
+          .filter((s) => s.subagents.some((a) => a.codes.includes(d.code)))
+          .map((s) => ({
+            ...s,
+            subagents: s.subagents.filter((a) => a.codes.includes(d.code)),
+          }))
+      : [];
   }
   return {
     id: slugify(def.name),

@@ -9,17 +9,26 @@ export interface Steer {
   note?: string;
 }
 
+export interface SubAgent {
+  id: string;
+  agent_type: string;
+  description: string;
+  phase: SessionPhase | null;
+  codes: string[];
+  status: SessionStatus;
+  last_active: string;
+}
+
 export interface Session {
   id: string;
   model: string;
   task: string;
   branch: string | null;
   status: SessionStatus;
-  phase: SessionPhase | null;
   iter: number;
   last_active: string;
   last_activity: string;
-  dir_codes: string[];
+  subagents: SubAgent[];
 }
 
 export interface Directive {
