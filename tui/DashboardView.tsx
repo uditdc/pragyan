@@ -192,13 +192,12 @@ function WorkingRow({ d }: { d: Directive }) {
 }
 
 function WorkingWidget({ projects, width }: { projects: Project[]; width: number }) {
-  const flat = projects.flatMap((p) => p.directives.map((d) => ({ d, project: p.name })));
-  const activeCount = flat.filter((e) => e.d.state === "active").length;
-  const ranked = [...flat]
+  const directives = projects.flatMap((p) => p.directives);
+  const activeCount = directives.filter((d) => d.state === "active").length;
+  const ranked = [...directives]
     .sort(
       (a, b) =>
-        STATE_TIER[a.d.state] - STATE_TIER[b.d.state] ||
-        lastActiveAt(b.d) - lastActiveAt(a.d),
+        STATE_TIER[a.state] - STATE_TIER[b.state] || lastActiveAt(b) - lastActiveAt(a),
     )
     .slice(0, 3);
   return (
@@ -213,7 +212,7 @@ function WorkingWidget({ projects, width }: { projects: Project[]; width: number
       {ranked.length === 0 ? (
         <Text color={P.faint}>no directives</Text>
       ) : (
-        ranked.map((e) => <WorkingRow key={e.d.id} d={e.d} />)
+        ranked.map((d) => <WorkingRow key={d.id} d={d} />)
       )}
     </Panel>
   );
