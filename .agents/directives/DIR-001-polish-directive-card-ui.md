@@ -1,8 +1,8 @@
 ---
 code: DIR-001
 title: Polish projects-view directive card UI
-state: done
-phase:
+state: active
+phase: work
 objectives:
   - Add a step-progress meter line for active directives (filled/empty cells + step n/N)
   - Polish lifecycle state badges and add compact session/steering count chips to the card header
@@ -121,3 +121,4 @@ An agent addresses each pending steer and rewrites it as its steering memory:
   - [addressed] <input>
     ↳ <note on what the agent did to address it>
 -->
+- [pending] resolve merge conflicts with main @479970958df67e3116c654872516e7663c41dcbe
