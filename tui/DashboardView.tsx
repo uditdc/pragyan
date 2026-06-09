@@ -1,10 +1,10 @@
 import { Box, Text } from "ink";
-import type { Post } from "../shared/post.ts";
 import type { MarketsSnapshot } from "../shared/market.ts";
 import type { UptimeSnapshot, MonitorStatus } from "../shared/uptime.ts";
 import type { SummaryRecord, Theme, Sentiment as SentimentData } from "../shared/summary.ts";
-import { P, sourceOf } from "./theme.ts";
-import { relativeTime, fmtClock, fmtCount } from "./format.ts";
+import type { Directive, DirectiveState, Project } from "../shared/project.ts";
+import { P } from "./theme.ts";
+import { relativeTime, fmtClock } from "./format.ts";
 import { PaneTicker } from "./Ticker.tsx";
 import { Cite } from "./Cite.tsx";
 import { Panel } from "./Panel.tsx";
@@ -149,46 +149,71 @@ function MarketWidget({ markets, width }: { markets: MarketsSnapshot | null; wid
   );
 }
 
-function CompactPost({ post, now }: { post: Post; now: number }) {
-  const src = sourceOf(post) === "news" ? P.news : P.x;
-  const name = post.author_handle
-    ? `@${post.author_handle.replace(/^@/, "")}`
-    : post.author_name;
+const DST: Record<DirectiveState, { g: string; c: string }> = {
+  empty: { g: "○", c: P.faint },
+  pending: { g: "◔", c: P.news },
+  active: { g: "◑", c: P.accent },
+  done: { g: "✓", c: P.up },
+};
+
+const STATE_TIER: Record<DirectiveState, number> = {
+  active: 0,
+  pending: 1,
+  done: 2,
+  empty: 3,
+};
+
+function lastActiveAt(d: Directive): number {
+  return Math.max(0, ...(d.sessions ?? []).map((s) => Date.parse(s.last_active) || 0));
+}
+
+function WorkingRow({ d }: { d: Directive }) {
+  const st = DST[d.state];
+  const hasStep = d.step != null && d.steps != null;
+  const meta = [hasStep ? `${d.step}/${d.steps}` : null, d.age].filter(Boolean).join(" · ");
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="single"
-      borderColor={src}
-      borderTop={false}
-      borderRight={false}
-      borderBottom={false}
-      paddingLeft={1}
-    >
-      <Box>
-        <Text color={P.fg} wrap="truncate">
-          {name}{" "}
-        </Text>
-        <Text color={P.faint}>{relativeTime(post.created_at, now)}</Text>
-        <Box flexGrow={1} />
-        <Text color={P.faint}>♥ {fmtCount(post.metrics.likes)}</Text>
+    <Box>
+      <Box flexShrink={0}>
+        <Text color={st.c}>{st.g} </Text>
+        <Text color={P.dim}>{d.code} </Text>
       </Box>
-      <Text color={P.dim} wrap="truncate">
-        {post.text.replace(/\s+/g, " ").trim()}
-      </Text>
+      <Box flexGrow={1} minWidth={0}>
+        <Text color={P.fg} wrap="truncate">
+          {d.title}
+        </Text>
+      </Box>
+      {meta ? (
+        <Box flexShrink={0}>
+          <Text color={P.faint}> {meta}</Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }
 
-function PostsWidget({ posts, width, now }: { posts: Post[]; width: number; now: number }) {
-  const top = [...posts]
-    .sort((a, b) => b.metrics.views - a.metrics.views || b.metrics.likes - a.metrics.likes)
+function WorkingWidget({ projects, width }: { projects: Project[]; width: number }) {
+  const flat = projects.flatMap((p) => p.directives.map((d) => ({ d, project: p.name })));
+  const activeCount = flat.filter((e) => e.d.state === "active").length;
+  const ranked = [...flat]
+    .sort(
+      (a, b) =>
+        STATE_TIER[a.d.state] - STATE_TIER[b.d.state] ||
+        lastActiveAt(b.d) - lastActiveAt(a.d),
+    )
     .slice(0, 3);
   return (
-    <Panel icon="X" iconColor={P.x} title="TOP POSTS" meta="by reach" width={width} flexGrow={1}>
-      {top.length === 0 ? (
-        <Text color={P.faint}>no posts yet</Text>
+    <Panel
+      icon="◑"
+      iconColor={P.accent}
+      title="WORKING"
+      meta={`${activeCount} active`}
+      width={width}
+      flexGrow={1}
+    >
+      {ranked.length === 0 ? (
+        <Text color={P.faint}>no directives</Text>
       ) : (
-        top.map((p) => <CompactPost key={p.id} post={p} now={now} />)
+        ranked.map((e) => <WorkingRow key={e.d.id} d={e.d} />)
       )}
     </Panel>
   );
@@ -254,7 +279,7 @@ export function DashboardView({
   newSince,
   index,
   total,
-  posts,
+  projects,
   markets,
   uptime,
   regenerating,
@@ -266,7 +291,7 @@ export function DashboardView({
   newSince: number;
   index: number;
   total: number;
-  posts: Post[];
+  projects: Project[];
   markets: MarketsSnapshot | null;
   uptime: UptimeSnapshot | null;
   regenerating: boolean;
@@ -292,7 +317,7 @@ export function DashboardView({
         {railWidth > 0 && (
           <Box flexDirection="column" width={railWidth} marginLeft={1} minHeight={0}>
             <MarketWidget markets={markets} width={railWidth} />
-            <PostsWidget posts={posts} width={railWidth} now={now} />
+            <WorkingWidget projects={projects} width={railWidth} />
             <AlertsWidget uptime={uptime} width={railWidth} />
           </Box>
         )}

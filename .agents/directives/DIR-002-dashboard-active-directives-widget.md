@@ -9,7 +9,7 @@ objectives:
   - Fall back to pending / most-recently-active directives when none are active
   - Replace PostsWidget with WorkingWidget in the rail and delete PostsWidget + CompactPost
   - Verify in the TUI that the new section renders and TOP POSTS is gone
-step: 0
+step: 5
 session: @run
 branch: dir/DIR-002-dashboard-active-directives-widget
 commits:
