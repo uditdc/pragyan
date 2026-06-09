@@ -447,7 +447,7 @@ function readDirectives(projectPath: string, worktrees: Worktree[]): Directive[]
         steers: parseSteers(raw),
       };
     })
-    .sort((a, b) => a.code.localeCompare(b.code));
+    .sort((a, b) => b.code.localeCompare(a.code)); // latest directives first
 }
 
 function findDirectiveFile(projectPath: string, code: string): string | null {

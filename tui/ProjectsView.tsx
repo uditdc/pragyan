@@ -378,11 +378,13 @@ function DirCard({
   const step = directive.step ?? 0;
   const pendingSteers = directive.steers.filter((st) => st.status !== "addressed").length;
   const sessionCount = directive.sessions.length;
-  const badge =
-    directive.state === "done"
-      ? directive.merged
-        ? { g: d.g, c: P.x, label: "merged" }
-        : { g: d.g, c: P.up, label: "committed" }
+  // Merged (done on main) wins; otherwise work committed on the branch — signalled by
+  // `state: done` or a recorded PR/`commits` — reads as "committed", even if the
+  // frontmatter `state` lags behind the actual branch progress.
+  const badge = directive.merged
+    ? { g: "✓", c: P.x, label: "merged" }
+    : directive.state === "done" || !!directive.commits
+      ? { g: "✓", c: P.up, label: "committed" }
       : d;
   return (
     <Box
