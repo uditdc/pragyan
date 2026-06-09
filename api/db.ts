@@ -350,6 +350,74 @@ export function queryFeed(q: FeedQuery): FeedResult {
   return { posts, next_since };
 }
 
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+export interface PostSearchQuery {
+  text: string | null;
+  author: string | null;
+  news_only: boolean;
+  since: string | null;
+  min_score: number;
+  limit: number;
+  include_expired: boolean;
+}
+
+export function searchPosts(q: PostSearchQuery): Post[] {
+  const { weights } = config;
+  const composite = `(
+    COALESCE(s_importance, 0) * ${weights.importance}
+    + COALESCE(s_relevance, 0) * ${weights.relevance}
+    - COALESCE(s_clickbait, 0) * ${weights.clickbait}
+  )`;
+
+  const where: string[] = ["kept = 1"];
+  const params: Record<string, unknown> = { limit: q.limit };
+
+  if (!q.include_expired) {
+    const nowMs = Date.now();
+    const { viewed_ttl_min, unviewed_ttl_hours } = config.expiry;
+    where.push("expired_at IS NULL");
+    where.push("harvested_at > @unviewed_cutoff");
+    where.push("(viewed_at IS NULL OR viewed_at > @viewed_cutoff)");
+    params.unviewed_cutoff = new Date(nowMs - unviewed_ttl_hours * 3_600_000).toISOString();
+    params.viewed_cutoff = new Date(nowMs - viewed_ttl_min * 60_000).toISOString();
+  }
+  if (q.news_only) where.push("s_is_news = 1");
+  if (q.since !== null) {
+    where.push("harvested_at > @since");
+    params.since = q.since;
+  }
+  if (q.min_score > 0) {
+    where.push("scored_at IS NOT NULL");
+    where.push(`${composite} >= @min_score`);
+    params.min_score = q.min_score;
+  }
+  if (q.text) {
+    where.push(
+      "(text LIKE @text ESCAPE '\\' OR quoted_text LIKE @text ESCAPE '\\'" +
+        " OR author_handle LIKE @text ESCAPE '\\' OR author_name LIKE @text ESCAPE '\\')",
+    );
+    params.text = `%${escapeLike(q.text)}%`;
+  }
+  if (q.author) {
+    where.push(
+      "(author_handle LIKE @author ESCAPE '\\' OR author_name LIKE @author ESCAPE '\\')",
+    );
+    params.author = `%${escapeLike(q.author)}%`;
+  }
+
+  const rows = db
+    .prepare<Record<string, unknown>, Row>(
+      `SELECT * FROM posts WHERE ${where.join(" AND ")}
+       ORDER BY created_at DESC, harvested_at DESC
+       LIMIT @limit`,
+    )
+    .all(params);
+  return rows.map(rowToPost);
+}
+
 const postsSinceStmt = db.prepare<{ since: string | null; limit: number }, Row>(
   `SELECT * FROM posts
    WHERE kept = 1 AND (@since IS NULL OR harvested_at > @since)
@@ -453,6 +521,17 @@ const summariesStmt = db.prepare<[number], SummaryRow>(
 
 export function getSummaries(limit: number): SummaryRecord[] {
   return summariesStmt.all(limit).map(rowToSummary);
+}
+
+const searchSummariesStmt = db.prepare<{ since: string | null; limit: number }, SummaryRow>(
+  `SELECT * FROM summaries
+   WHERE @since IS NULL OR generated_at > @since
+   ORDER BY generated_at DESC, id DESC
+   LIMIT @limit`,
+);
+
+export function searchSummaries(opts: { since: string | null; limit: number }): SummaryRecord[] {
+  return searchSummariesStmt.all(opts).map(rowToSummary);
 }
 
 const pruneSummariesStmt = db.prepare(

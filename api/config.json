@@ -18,7 +18,7 @@
     ]
   },
   "scoring": {
-    "model": "claude-haiku-4-5",
+    "model": "gpt-oss-120b",
     "batch_size": 15,
     "max_concurrent_batches": 2,
     "poll_interval_ms": 5000
@@ -32,6 +32,9 @@
     "max_posts": 200,
     "min_items": 4,
     "retention": 50
+  },
+  "chat": {
+    "render": true
   },
   "sources": {
     "provider": "real",

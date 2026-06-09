@@ -18,6 +18,8 @@ import { getSnapshot, startMarkets } from "./markets.ts";
 import { startNews } from "./news.ts";
 import { getUptimeSnapshot, startUptime, checkNow } from "./uptime.ts";
 import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
+import { runChat } from "./chat.ts";
+import type { ChatMessage } from "../shared/chat.ts";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -143,6 +145,34 @@ app.get("/summaries", (req, res) => {
 app.post("/summary/regenerate", async (_req, res) => {
   await generateSummary();
   res.json(getLatestSummary());
+});
+
+function readMessages(req: express.Request, res: express.Response): ChatMessage[] | null {
+  const messages = req.body?.messages;
+  const valid =
+    Array.isArray(messages) &&
+    messages.length <= 100 &&
+    messages.every(
+      (m) =>
+        m &&
+        (m.role === "user" || m.role === "assistant") &&
+        typeof m.content === "string",
+    );
+  if (!valid) {
+    res.status(400).json({ error: "body must be { messages: { role, content }[] }" });
+    return null;
+  }
+  return messages as ChatMessage[];
+}
+
+app.post("/chat", async (req, res) => {
+  const messages = readMessages(req, res);
+  if (!messages) return;
+  res.setHeader("Content-Type", "application/x-ndjson");
+  const write = (obj: unknown) => res.write(`${JSON.stringify(obj)}\n`);
+  const result = await runChat(messages, (ev) => write({ type: "event", ...ev }));
+  write({ type: "result", ...result });
+  res.end();
 });
 
 startMarkets();
