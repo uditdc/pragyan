@@ -2,7 +2,7 @@
 code: DIR-001
 title: Polish projects-view directive card UI
 state: active
-phase: work
+phase: review
 objectives:
   - Add a step-progress meter line for active directives (filled/empty cells + step n/N)
   - Polish lifecycle state badges and add compact session/steering count chips to the card header
