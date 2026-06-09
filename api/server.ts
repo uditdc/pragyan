@@ -203,9 +203,18 @@ startMarkets();
 startNews();
 startSummary();
 
-app.listen(config.server.port, config.server.host, () => {
+const server = app.listen(config.server.port, config.server.host, () => {
   console.log(
     `x-feed-filter API on http://${config.server.host}:${config.server.port}`,
   );
   startUptime();
 });
+
+function shutdown(): void {
+  server.closeAllConnections();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 2000).unref();
+}
+
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
