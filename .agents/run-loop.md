@@ -6,9 +6,12 @@ and stays referenced across development. This is the spec for a future
 
 ## Principles
 
-- **The directive `.md` is the single source of truth.** `state` / `step` /
-  `session` / `branch` / `commits` (frontmatter) and the `## Steering` log hold all
-  lifecycle status. Every actor *writes* the file; the API/TUI only *read* it.
+- **The directive `.md` is the single source of truth — and its live status lives on
+  the branch.** During a run, status (`state`/`phase`/`step`/`commits`/steers) is updated
+  in the directive `.md` *on the worktree* and committed to `dir/DIR-NNN-…`; `main` only
+  updates when the PR merges. The API/TUI read the freshest source: **worktree working
+  copy → committed branch (`git show`) → main** (`liveDirectiveRaw` in `api/projects.ts`).
+  So code and its directive status update together on the same branch.
 - **`DIR-NNN` is the join key.** It threads the directive file ↔ its branch
   `dir/DIR-NNN-…` ↔ every phase subagent's tag ↔ the PR ↔ commit messages.
   Given any one, you can find the rest.
