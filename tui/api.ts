@@ -5,6 +5,7 @@ import type {
   SummaryResponse,
 } from "../shared/summary.ts";
 import type { ChatEvent, ChatMessage, ChatResponse } from "../shared/chat.ts";
+import type { ProjectsResponse, Steer } from "../shared/project.ts";
 
 export interface FeedResponse {
   posts: Post[];
@@ -78,6 +79,31 @@ export async function regenerateSummary(baseUrl: string): Promise<SummaryRecord 
   });
   if (!res.ok) throw new Error(`regenerate ${res.status}`);
   return (await res.json()) as SummaryRecord | null;
+}
+
+export async function fetchProjects(baseUrl: string): Promise<ProjectsResponse> {
+  const res = await fetch(`${baseUrl}/projects`, { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`projects ${res.status}`);
+  return (await res.json()) as ProjectsResponse;
+}
+
+export async function postSteer(
+  baseUrl: string,
+  projectId: string,
+  code: string,
+  text: string,
+): Promise<Steer> {
+  const res = await fetch(
+    `${baseUrl}/projects/${projectId}/directives/${code}/steer`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(5000),
+    },
+  );
+  if (!res.ok) throw new Error(`steer ${res.status}`);
+  return (await res.json()) as Steer;
 }
 
 export async function postChat(

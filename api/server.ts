@@ -19,6 +19,7 @@ import { startNews } from "./news.ts";
 import { getUptimeSnapshot, startUptime, checkNow } from "./uptime.ts";
 import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
 import { runChat } from "./chat.ts";
+import { getProjects, findProject, appendSteer } from "./projects.ts";
 import type { ChatMessage } from "../shared/chat.ts";
 
 const app = express();
@@ -145,6 +146,29 @@ app.get("/summaries", (req, res) => {
 app.post("/summary/regenerate", async (_req, res) => {
   await generateSummary();
   res.json(getLatestSummary());
+});
+
+app.get("/projects", (_req, res) => {
+  res.json({ projects: getProjects(config) });
+});
+
+app.post("/projects/:id/directives/:code/steer", (req, res) => {
+  const def = findProject(config, req.params.id);
+  if (!def) {
+    res.status(404).json({ error: "unknown project" });
+    return;
+  }
+  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+  if (!text) {
+    res.status(400).json({ error: "body must be { text: string }" });
+    return;
+  }
+  const steer = appendSteer(def.path, req.params.code, text);
+  if (!steer) {
+    res.status(404).json({ error: "unknown directive" });
+    return;
+  }
+  res.json(steer);
 });
 
 function readMessages(req: express.Request, res: express.Response): ChatMessage[] | null {

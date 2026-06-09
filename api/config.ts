@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import type { ProjectDef } from "../shared/project.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +55,7 @@ export interface Config {
     services: { name: string; url: string }[];
   };
   server: { host: string; port: number; db_path: string };
+  projects?: ProjectDef[];
 }
 
 export const config: Config = JSON.parse(
