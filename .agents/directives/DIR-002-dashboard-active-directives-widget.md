@@ -12,7 +12,7 @@ objectives:
 step: 5
 session: @run
 branch: dir/DIR-002-dashboard-active-directives-widget
-commits:
+commits: PR#3 9c5d5dc (open)
 ---
 
 # Direction
