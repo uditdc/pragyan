@@ -263,7 +263,9 @@ function NestedSessionRow({ session, now }: { session: Session; now: number }) {
     <Box flexDirection="column" flexShrink={0}>
       <Box>
         <Box flexShrink={0}>
-          <Text color={s.c}>{s.g} </Text>
+          <Box flexShrink={0} width={2}>
+            <Text color={s.c}>{s.g}</Text>
+          </Box>
           <Text color={P.fg}>{session.model}</Text>
         </Box>
         <Box flexGrow={1} minWidth={0}>
@@ -345,6 +347,19 @@ function DirectivesList({
   );
 }
 
+function ProgressMeter({ step, steps }: { step: number; steps: number }) {
+  const cells = 12;
+  const ratio = steps > 0 ? Math.max(0, Math.min(1, step / steps)) : 0;
+  const filled = Math.round(ratio * cells);
+  return (
+    <Box flexShrink={0}>
+      <Text color={P.accent}>{"█".repeat(filled)}</Text>
+      <Text color={P.faint}>{"░".repeat(cells - filled)}</Text>
+      <Text color={P.accent}> {step}/{steps}</Text>
+    </Box>
+  );
+}
+
 // Full-width work-order card — mirrors the design's DirCardFull: a framed box
 // with a left accent border in the lifecycle colour, a state badge, the full
 // plan with checked-off steps, and an assignment footer.
@@ -361,7 +376,8 @@ function DirCard({
   const active = directive.state === "active";
   const steps = directive.steps ?? directive.objectives.length;
   const step = directive.step ?? 0;
-  // `done` means committed to the branch; once merged to main it reads as "merged".
+  const pendingSteers = directive.steers.filter((st) => st.status !== "addressed").length;
+  const sessionCount = directive.sessions.length;
   const badge =
     directive.state === "done"
       ? directive.merged
@@ -375,10 +391,12 @@ function DirCard({
       marginBottom={1}
       paddingX={1}
       borderStyle="round"
-      borderColor={selected ? P.accent : active ? P.accent : P.rule}
+      borderColor={selected ? P.white : active ? P.accent : P.rule}
     >
       <Box>
-        <Text color={badge.c}>{badge.g} </Text>
+        <Box flexShrink={0} width={2}>
+          <Text color={selected ? P.accent : badge.c} bold>{selected ? "▌" : badge.g}</Text>
+        </Box>
         {directive.code ? (
           <Box flexShrink={0}>
             <Text color={P.accent} bold>
@@ -388,14 +406,24 @@ function DirCard({
           </Box>
         ) : null}
         <Box flexGrow={1} minWidth={0}>
-          <Text color={P.fg} bold wrap="truncate">
+          <Text color={selected ? P.white : P.fg} bold wrap="truncate">
             {directive.title}
           </Text>
         </Box>
         <Box flexShrink={0} marginLeft={1}>
-          <Text color={badge.c}>[ {badge.label} ]</Text>
+          {sessionCount ? <Text color={P.x}>◇ {sessionCount}  </Text> : null}
+          {directive.steers.length ? (
+            <Text color={pendingSteers ? P.news : P.faint}>○ {pendingSteers || directive.steers.length}  </Text>
+          ) : null}
+          <Text color={badge.c} bold={selected || active}>[ {badge.g} {badge.label} ]</Text>
         </Box>
       </Box>
+
+      {active ? (
+        <Box paddingLeft={2} marginTop={1}>
+          <ProgressMeter step={step} steps={steps} />
+        </Box>
+      ) : null}
 
       {directive.state === "empty" ? (
         <Box paddingLeft={2} marginTop={1}>
@@ -440,13 +468,12 @@ function DirCard({
         </Box>
       ) : null}
 
-      {directive.session || directive.branch || directive.age || active ? (
+      {directive.session || directive.branch || directive.age ? (
         <Box paddingLeft={2} marginTop={1}>
           <Box flexGrow={1} minWidth={0}>
             <Text wrap="truncate">
               {directive.session ? <Text color={P.x}>{directive.session}  </Text> : null}
               {directive.branch ? <Text color={P.faint}>⎇ {directive.branch}</Text> : null}
-              {active ? <Text color={P.accent}>  step {step}/{steps}</Text> : null}
               {directive.state === "done" && directive.commits ? (
                 <Text color={P.up}>  {directive.commits}</Text>
               ) : null}
@@ -478,28 +505,35 @@ function DirCard({
       {directive.steers.length > 0 ? (
         <Box flexDirection="column" paddingLeft={2} marginTop={1}>
           <Text color={P.faint}>STEERING · {directive.steers.length}</Text>
-          {directive.steers.map((st, i) => (
-            <Box key={i} flexDirection="column">
-              <Box>
-                <Text color={STEER[st.status].c}>{STEER[st.status].g} </Text>
-                <Box flexGrow={1} minWidth={0}>
-                  <Text color={st.status === "addressed" ? P.dim : P.fg} wrap="truncate">
-                    {st.text}
-                  </Text>
-                </Box>
-              </Box>
-              {st.note ? (
-                <Box paddingLeft={2}>
-                  <Text color={P.faint}>↳ </Text>
+          {directive.steers.map((st, i) => {
+            const open = st.status !== "addressed";
+            return (
+              <Box key={i} flexDirection="column">
+                <Box>
+                  <Box flexShrink={0} width={2}>
+                    <Text color={STEER[st.status].c}>{STEER[st.status].g}</Text>
+                  </Box>
                   <Box flexGrow={1} minWidth={0}>
-                    <Text color={P.dim} wrap="truncate">
-                      {st.note}
+                    <Text color={open ? P.fg : P.faint} bold={open} wrap="truncate">
+                      {st.text}
                     </Text>
                   </Box>
                 </Box>
-              ) : null}
-            </Box>
-          ))}
+                {st.note ? (
+                  <Box paddingLeft={2}>
+                    <Box flexShrink={0} width={2}>
+                      <Text color={P.faint}>↳</Text>
+                    </Box>
+                    <Box flexGrow={1} minWidth={0}>
+                      <Text color={P.dim} wrap="truncate">
+                        {st.note}
+                      </Text>
+                    </Box>
+                  </Box>
+                ) : null}
+              </Box>
+            );
+          })}
         </Box>
       ) : null}
     </Box>
