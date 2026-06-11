@@ -177,5 +177,6 @@ export async function tick(): Promise<void> {
 }
 
 export function startSummary(): void {
+  if (getLatestSummary()) return;
   void tick();
 }
