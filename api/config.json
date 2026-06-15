@@ -33,9 +33,6 @@
     "min_items": 4,
     "retention": 50
   },
-  "chat": {
-    "render": true
-  },
   "sources": {
     "provider": "real",
     "poll_interval_ms": 60000,

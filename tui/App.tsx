@@ -10,7 +10,6 @@ import {
   regenerateSummary,
 } from "./api.ts";
 import type { SummaryRecord } from "../shared/summary.ts";
-import type { ChatEvent, ChatTurn } from "../shared/chat.ts";
 import { consolidateThreads } from "./threads.ts";
 import { pickWindow } from "./layout.ts";
 import { fmtClock } from "./format.ts";
@@ -28,7 +27,6 @@ import { fetchMarkets } from "./markets.ts";
 import type { MarketsSnapshot } from "../shared/market.ts";
 import { MarketView } from "./MarketView.tsx";
 import { UptimeView } from "./UptimeView.tsx";
-import { ChatView } from "./ChatView.tsx";
 import { fetchUptime, recheckUptime } from "./uptime.ts";
 import type { UptimeSnapshot } from "../shared/uptime.ts";
 
@@ -78,11 +76,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const [summaryNew, setSummaryNew] = useState(0);
   const [summaryIdx, setSummaryIdx] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatTurn[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatBusy, setChatBusy] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [chatLive, setChatLive] = useState<ChatEvent[]>([]);
 
   const seenRef = useRef<Set<string>>(new Set());
   const freshRef = useRef<Set<string>>(new Set());
@@ -199,7 +192,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const onFeedTab = TABS[tabIdx] === "feed";
   const onDashboardTab = TABS[tabIdx] === "dashboard";
   const onUptimeTab = TABS[tabIdx] === "uptime";
-  const onChatTab = TABS[tabIdx] === "chat";
 
   const downServices = useMemo(
     () => (uptime?.monitors ?? []).filter((m) => m.state === "down").map((m) => m.name),
@@ -255,7 +247,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         setTabIdx((i) => (key.shift ? (i + len - 1) % len : (i + 1) % len));
         return;
       }
-      if (onChatTab) return;
       if (input === "q") {
         exit();
         return;
@@ -406,23 +397,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         />
       ) : onUptimeTab ? (
         <UptimeView snapshot={uptime} width={columns} height={bodyRows} now={now} />
-      ) : onChatTab ? (
-        <ChatView
-          baseUrl={baseUrl}
-          active={onChatTab && Boolean(isRawModeSupported)}
-          width={columns}
-          height={bodyRows}
-          messages={chatMessages}
-          setMessages={setChatMessages}
-          input={chatInput}
-          setInput={setChatInput}
-          busy={chatBusy}
-          setBusy={setChatBusy}
-          error={chatError}
-          setError={setChatError}
-          live={chatLive}
-          setLive={setChatLive}
-        />
       ) : (
         <MarketView markets={markets} width={columns} height={bodyRows} now={now} />
       )}

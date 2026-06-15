@@ -30,9 +30,6 @@ export interface Config {
     min_items: number;
     retention: number;
   };
-  chat: {
-    render: boolean;
-  };
   sources: {
     provider: "mock" | "real";
     poll_interval_ms: number;

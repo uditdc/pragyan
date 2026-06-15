@@ -4,7 +4,6 @@ import type {
   SummaryRecord,
   SummaryResponse,
 } from "../shared/summary.ts";
-import type { ChatEvent, ChatMessage, ChatResponse } from "../shared/chat.ts";
 
 export interface FeedResponse {
   posts: Post[];
@@ -78,36 +77,4 @@ export async function regenerateSummary(baseUrl: string): Promise<SummaryRecord 
   });
   if (!res.ok) throw new Error(`regenerate ${res.status}`);
   return (await res.json()) as SummaryRecord | null;
-}
-
-export async function postChat(
-  baseUrl: string,
-  messages: ChatMessage[],
-  onEvent?: (ev: ChatEvent) => void,
-): Promise<ChatResponse> {
-  const res = await fetch(`${baseUrl}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
-    signal: AbortSignal.timeout(180_000),
-  });
-  if (!res.ok || !res.body) throw new Error(`chat ${res.status}`);
-
-  const decoder = new TextDecoder();
-  let buf = "";
-  let final: ChatResponse | null = null;
-  for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
-    buf += decoder.decode(chunk, { stream: true });
-    let nl: number;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line) continue;
-      const msg = JSON.parse(line) as { type: string } & Record<string, unknown>;
-      if (msg.type === "event") onEvent?.({ kind: msg.kind as ChatEvent["kind"], label: String(msg.label) });
-      else if (msg.type === "result") final = msg as unknown as ChatResponse;
-    }
-  }
-  if (!final) throw new Error("chat: no result");
-  return final;
 }
