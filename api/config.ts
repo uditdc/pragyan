@@ -8,6 +8,7 @@ export interface Config {
   interest_topics: string[];
   weights: { importance: number; relevance: number; clickbait: number };
   gates: { min_news_confidence: number; news_only_default: boolean };
+  feed: { max_age_hours: number };
   prefilter: {
     engagement_floor: number;
     drop_replies: boolean;

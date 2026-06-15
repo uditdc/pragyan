@@ -317,6 +317,12 @@ export function queryFeed(q: FeedQuery): FeedResult {
     params.unviewed_cutoff = new Date(nowMs - unviewed_ttl_hours * 3_600_000).toISOString();
     params.viewed_cutoff = new Date(nowMs - viewed_ttl_min * 60_000).toISOString();
   }
+  if (config.feed.max_age_hours > 0) {
+    where.push("created_at > @max_age_cutoff");
+    params.max_age_cutoff = new Date(
+      Date.now() - config.feed.max_age_hours * 3_600_000,
+    ).toISOString();
+  }
   if (q.news_only) where.push("s_is_news = 1");
   if (q.since !== null) {
     where.push("harvested_at > @since");
