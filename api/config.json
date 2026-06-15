@@ -60,17 +60,5 @@
       { "name": "askrera", "url": "http://127.0.0.1:3004/health" }
     ]
   },
-  "server": { "host": "127.0.0.1", "port": 8787, "db_path": "api/feed.db" },
-  "projects": [
-    {
-      "name": "pragyan",
-      "path": "/home/udit/Work/personal/xfeed",
-      "repo": "github.com/uditdc/pragyan"
-    },
-    {
-      "name": "askrera",
-      "path": "/home/udit/Work/personal/askrera",
-      "repo": "github.com/uditdc/askrera"
-    }
-  ]
+  "server": { "host": "127.0.0.1", "port": 8787, "db_path": "api/feed.db" }
 }

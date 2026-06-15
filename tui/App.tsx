@@ -8,8 +8,6 @@ import {
   postUndismiss,
   fetchSummaries,
   regenerateSummary,
-  fetchProjects,
-  postSteer,
 } from "./api.ts";
 import type { SummaryRecord } from "../shared/summary.ts";
 import type { ChatEvent, ChatTurn } from "../shared/chat.ts";
@@ -33,8 +31,6 @@ import { UptimeView } from "./UptimeView.tsx";
 import { ChatView } from "./ChatView.tsx";
 import { fetchUptime, recheckUptime } from "./uptime.ts";
 import type { UptimeSnapshot } from "../shared/uptime.ts";
-import { ProjectsView } from "./ProjectsView.tsx";
-import type { Project } from "../shared/project.ts";
 
 const THRESHOLDS = [0, 0.2, 0.4, 0.6];
 
@@ -87,11 +83,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const [chatBusy, setChatBusy] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatLive, setChatLive] = useState<ChatEvent[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectIdx, setProjectIdx] = useState(0);
-  const [projDirIdx, setProjDirIdx] = useState(0);
-  const [composing, setComposing] = useState(false);
-  const [composeText, setComposeText] = useState("");
 
   const seenRef = useRef<Set<string>>(new Set());
   const freshRef = useRef<Set<string>>(new Set());
@@ -158,25 +149,15 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     }
   }, [baseUrl]);
 
-  const loadProjects = useCallback(async () => {
-    try {
-      setProjects((await fetchProjects(baseUrl)).projects);
-    } catch {
-      /* keep last snapshot */
-    }
-  }, [baseUrl]);
-
   useEffect(() => {
     void load();
     void loadMarkets();
     void loadUptime();
     void loadSummary();
-    void loadProjects();
     const poll = setInterval(() => void load(), pollMs);
     const marketPoll = setInterval(() => void loadMarkets(), 10_000);
     const uptimePoll = setInterval(() => void loadUptime(), 15_000);
     const summaryPoll = setInterval(() => void loadSummary(), 30_000);
-    const projectPoll = setInterval(() => void loadProjects(), 10_000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
     const anim = config.matrix_rain ? setInterval(() => setFrame((f) => f + 1), 130) : null;
     return () => {
@@ -184,11 +165,10 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       clearInterval(marketPoll);
       clearInterval(uptimePoll);
       clearInterval(summaryPoll);
-      clearInterval(projectPoll);
       clearInterval(clock);
       if (anim) clearInterval(anim);
     };
-  }, [load, loadMarkets, loadUptime, loadSummary, loadProjects, pollMs]);
+  }, [load, loadMarkets, loadUptime, loadSummary, pollMs]);
 
   useEffect(() => {
     const flushViewed = () => {
@@ -216,15 +196,10 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     if (!cards.some((c) => c.key === selectedId)) setSelectedId(cards[0].key);
   }, [cards, selectedId]);
 
-  useEffect(() => {
-    setProjDirIdx(0);
-  }, [projectIdx]);
-
   const onFeedTab = TABS[tabIdx] === "feed";
   const onDashboardTab = TABS[tabIdx] === "dashboard";
   const onUptimeTab = TABS[tabIdx] === "uptime";
   const onChatTab = TABS[tabIdx] === "chat";
-  const onProjectsTab = TABS[tabIdx] === "projects";
 
   const downServices = useMemo(
     () => (uptime?.monitors ?? []).filter((m) => m.state === "down").map((m) => m.name),
@@ -275,26 +250,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         exit();
         return;
       }
-      if (onProjectsTab && composing) {
-        if (key.escape) {
-          setComposing(false);
-          setComposeText("");
-        } else if (key.return) {
-          const text = composeText.trim();
-          const proj = projects[projectIdx];
-          const dir = proj?.directives[projDirIdx];
-          if (text && proj && dir?.code) {
-            void postSteer(baseUrl, proj.id, dir.code, text).then(loadProjects).catch(() => {});
-          }
-          setComposing(false);
-          setComposeText("");
-        } else if (key.backspace || key.delete) {
-          setComposeText((t) => t.slice(0, -1));
-        } else if (input && !key.ctrl && !key.meta) {
-          setComposeText((t) => t + input);
-        }
-        return;
-      }
       if (key.tab) {
         const len = TABS.length;
         setTabIdx((i) => (key.shift ? (i + len - 1) % len : (i + 1) % len));
@@ -319,8 +274,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
             .finally(() => setRegenerating(false));
         } else if (onUptimeTab) {
           void recheckUptime(baseUrl).then(setUptime).catch(() => {});
-        } else if (onProjectsTab) {
-          void loadProjects();
         } else {
           void load();
           void loadMarkets();
@@ -332,21 +285,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           setSummaryIdx((i) => Math.min(summaries.length - 1, i + 1));
         } else if (input === "l" || key.rightArrow) {
           setSummaryIdx((i) => Math.max(0, i - 1));
-        }
-        return;
-      }
-      if (onProjectsTab) {
-        if (input === "h" || input === "[" || key.leftArrow) {
-          setProjectIdx((i) => Math.max(0, i - 1));
-        } else if (input === "l" || input === "]" || key.rightArrow) {
-          setProjectIdx((i) => Math.min(projects.length - 1, i + 1));
-        } else if (input === "j" || key.downArrow) {
-          const max = (projects[projectIdx]?.directives.length ?? 1) - 1;
-          setProjDirIdx((i) => Math.min(max, i + 1));
-        } else if (input === "k" || key.upArrow) {
-          setProjDirIdx((i) => Math.max(0, i - 1));
-        } else if (input === "i" || input === "a") {
-          if (projects[projectIdx]?.directives[projDirIdx]?.code) setComposing(true);
         }
         return;
       }
@@ -459,7 +397,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           newSince={summaryNew}
           index={summaries.length ? Math.min(summaryIdx, summaries.length - 1) : 0}
           total={summaries.length}
-          projects={projects}
           markets={markets}
           uptime={uptime}
           regenerating={regenerating}
@@ -485,18 +422,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           setError={setChatError}
           live={chatLive}
           setLive={setChatLive}
-        />
-      ) : onProjectsTab ? (
-        <ProjectsView
-          projects={projects}
-          projectIdx={projectIdx}
-          dirIdx={projDirIdx}
-          composing={composing}
-          composeText={composeText}
-          width={columns}
-          height={bodyRows}
-          now={now}
-          online={online}
         />
       ) : (
         <MarketView markets={markets} width={columns} height={bodyRows} now={now} />
