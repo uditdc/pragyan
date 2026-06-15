@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { render } from "ink";
 import { App } from "./App.tsx";
 import { fetchHealth } from "./api.ts";
@@ -29,8 +30,8 @@ function parseArgs(argv: string[]): Args {
 
 const THRESHOLDS = [0, 0.2, 0.4, 0.6];
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+export async function runTui(argv: string[] = process.argv.slice(2)) {
+  const args = parseArgs(argv);
 
   const healthy = await fetchHealth(args.baseUrl);
   if (!healthy) {
@@ -64,4 +65,6 @@ async function main() {
   if (fullscreen) leaveAltScreen();
 }
 
-void main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  void runTui();
+}
