@@ -2,7 +2,6 @@ import { Box, Text } from "ink";
 import type { MarketsSnapshot } from "../shared/market.ts";
 import type { UptimeSnapshot, MonitorStatus } from "../shared/uptime.ts";
 import type { SummaryRecord, Theme, Sentiment as SentimentData } from "../shared/summary.ts";
-import type { Directive, DirectiveState, Project } from "../shared/project.ts";
 import { P } from "./theme.ts";
 import { relativeTime, fmtClock } from "./format.ts";
 import { PaneTicker } from "./Ticker.tsx";
@@ -149,75 +148,6 @@ function MarketWidget({ markets, width }: { markets: MarketsSnapshot | null; wid
   );
 }
 
-const DST: Record<DirectiveState, { g: string; c: string }> = {
-  empty: { g: "○", c: P.faint },
-  pending: { g: "◔", c: P.news },
-  active: { g: "◑", c: P.accent },
-  done: { g: "✓", c: P.up },
-};
-
-const STATE_TIER: Record<DirectiveState, number> = {
-  active: 0,
-  pending: 1,
-  done: 2,
-  empty: 3,
-};
-
-function lastActiveAt(d: Directive): number {
-  return Math.max(0, ...(d.sessions ?? []).map((s) => Date.parse(s.last_active) || 0));
-}
-
-function WorkingRow({ d }: { d: Directive }) {
-  const st = DST[d.state];
-  const hasStep = d.step != null && d.steps != null;
-  const meta = [hasStep ? `${d.step}/${d.steps}` : null, d.age].filter(Boolean).join(" · ");
-  return (
-    <Box>
-      <Box flexShrink={0}>
-        <Text color={st.c}>{st.g} </Text>
-        <Text color={P.dim}>{d.code} </Text>
-      </Box>
-      <Box flexGrow={1} minWidth={0}>
-        <Text color={P.fg} wrap="truncate">
-          {d.title}
-        </Text>
-      </Box>
-      {meta ? (
-        <Box flexShrink={0}>
-          <Text color={P.faint}> {meta}</Text>
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
-
-function WorkingWidget({ projects, width }: { projects: Project[]; width: number }) {
-  const directives = projects.flatMap((p) => p.directives);
-  const activeCount = directives.filter((d) => d.state === "active").length;
-  const ranked = [...directives]
-    .sort(
-      (a, b) =>
-        STATE_TIER[a.state] - STATE_TIER[b.state] || lastActiveAt(b) - lastActiveAt(a),
-    )
-    .slice(0, 3);
-  return (
-    <Panel
-      icon="◑"
-      iconColor={P.accent}
-      title="WORKING"
-      meta={`${activeCount} active`}
-      width={width}
-      flexGrow={1}
-    >
-      {ranked.length === 0 ? (
-        <Text color={P.faint}>no directives</Text>
-      ) : (
-        ranked.map((d) => <WorkingRow key={d.id} d={d} />)
-      )}
-    </Panel>
-  );
-}
-
 const LEVEL: Record<string, { label: string; color: string }> = {
   up: { label: "ok ", color: P.up },
   down: { label: "err", color: P.down },
@@ -278,7 +208,6 @@ export function DashboardView({
   newSince,
   index,
   total,
-  projects,
   markets,
   uptime,
   regenerating,
@@ -290,7 +219,6 @@ export function DashboardView({
   newSince: number;
   index: number;
   total: number;
-  projects: Project[];
   markets: MarketsSnapshot | null;
   uptime: UptimeSnapshot | null;
   regenerating: boolean;
@@ -316,7 +244,6 @@ export function DashboardView({
         {railWidth > 0 && (
           <Box flexDirection="column" width={railWidth} marginLeft={1} minHeight={0}>
             <MarketWidget markets={markets} width={railWidth} />
-            <WorkingWidget projects={projects} width={railWidth} />
             <AlertsWidget uptime={uptime} width={railWidth} />
           </Box>
         )}
