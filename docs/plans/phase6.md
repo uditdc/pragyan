@@ -105,7 +105,9 @@ watching can have. This is the highest-moat step.
 
 ### Extension (`extension/`)
 - **Capture thread structure** — populate `thread_id` (currently hardcoded `null` at
-  `selectors.js:136`) so threads are reconstructable.
+  `selectors.js:136`) so threads are reconstructable. *(Deferred: the timeline DOM doesn't reliably
+  expose a tweet's conversation root, and shipping unreliable thread ids pollutes the moat. Do this
+  in Step 4 via the `request_harvest` hands, which can open the thread view where the root is known.)*
 - **Capture feed position** — the index/order a post appeared in *your* timeline, sent on
   `/ingest`. Position + recurrence is the personalization signal (what the algorithm pushed at
   you), which is itself unique data.
