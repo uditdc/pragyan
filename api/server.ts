@@ -13,6 +13,7 @@ import {
   getLatestSummary,
   getSummaries,
   countNewSince,
+  prunePosts,
 } from "./db.ts";
 import { getSnapshot, startMarkets } from "./markets.ts";
 import { startNews } from "./news.ts";
@@ -94,7 +95,7 @@ app.get("/feed", (req, res) => {
     min_score: Number(q.min_score ?? 0),
     since: typeof q.since === "string" ? q.since : null,
     limit: Math.min(200, Number(q.limit ?? 50)),
-    news_only: q.news_only === "true",
+    news_only: q.news_only !== undefined ? q.news_only === "true" : config.gates.news_only_default,
     include_dropped: q.include_dropped === "true",
     include_expired: q.include_expired === "true",
     sort: q.sort === "recent" ? "recent" : "score",
@@ -218,6 +219,15 @@ startMarkets();
 startNews();
 startScorer();
 startSummary();
+
+setInterval(() => {
+  try {
+    const pruned = prunePosts(config.maintenance.drop_retention_days);
+    if (pruned > 0) console.log(`pruned ${pruned} dropped post(s)`);
+  } catch (err) {
+    console.error("prune failed:", err instanceof Error ? err.message : err);
+  }
+}, config.maintenance.interval_ms);
 
 const server = app.listen(config.server.port, config.server.host, () => {
   console.log(

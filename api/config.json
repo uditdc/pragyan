@@ -67,5 +67,6 @@
       { "name": "askrera", "url": "http://127.0.0.1:3004/health" }
     ]
   },
+  "maintenance": { "drop_retention_days": 7, "interval_ms": 3600000 },
   "server": { "host": "127.0.0.1", "port": 8787, "db_path": "api/feed.db" }
 }

@@ -73,6 +73,7 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_posts_harvested ON posts(harvested_at);
   CREATE INDEX IF NOT EXISTS idx_posts_scoring ON posts(kept, scored_at);
+  CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at);
 
   CREATE TABLE IF NOT EXISTS summaries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -596,13 +597,22 @@ export interface FeedResult {
   next_since: string | null;
 }
 
-export function queryFeed(q: FeedQuery): FeedResult {
+// Mild recency decay applied only to score-sorted ordering (not to the min_score
+// gate, so thresholds keep their meaning): a post ~3 days old ranks at ~half.
+const RECENCY_DECAY_SQL =
+  "(1.0 / (1.0 + ((julianday('now') - julianday(created_at)) * 24.0) / 72.0))";
+
+function compositeScoreSql(): string {
   const { weights } = config;
-  const composite = `(
+  return `(
     COALESCE(s_importance, 0) * ${weights.importance}
     + COALESCE(s_relevance, 0) * ${weights.relevance}
     - COALESCE(s_clickbait, 0) * ${weights.clickbait}
   )`;
+}
+
+export function queryFeed(q: FeedQuery): FeedResult {
+  const composite = compositeScoreSql();
 
   const where: string[] = [];
   const params: Record<string, unknown> = { limit: q.limit };
@@ -623,7 +633,10 @@ export function queryFeed(q: FeedQuery): FeedResult {
       Date.now() - config.feed.max_age_hours * 3_600_000,
     ).toISOString();
   }
-  if (q.news_only) where.push("s_is_news = 1");
+  if (q.news_only) {
+    where.push("s_is_news = 1");
+    where.push(`COALESCE(s_news_confidence, 0) >= ${config.gates.min_news_confidence}`);
+  }
   if (q.since !== null) {
     where.push("harvested_at > @since");
     params.since = q.since;
@@ -638,7 +651,7 @@ export function queryFeed(q: FeedQuery): FeedResult {
   const orderSql =
     q.sort === "recent"
       ? "created_at DESC, harvested_at DESC"
-      : `scored_at IS NULL, ${composite} DESC, harvested_at DESC`;
+      : `scored_at IS NULL, ${composite} * ${RECENCY_DECAY_SQL} DESC, harvested_at DESC`;
   const rows = db
     .prepare<Record<string, unknown>, Row>(
       `SELECT * FROM posts ${whereSql}
@@ -671,12 +684,7 @@ export interface PostSearchQuery {
 }
 
 export function searchPosts(q: PostSearchQuery): Post[] {
-  const { weights } = config;
-  const composite = `(
-    COALESCE(s_importance, 0) * ${weights.importance}
-    + COALESCE(s_relevance, 0) * ${weights.relevance}
-    - COALESCE(s_clickbait, 0) * ${weights.clickbait}
-  )`;
+  const composite = compositeScoreSql();
 
   const where: string[] = ["kept = 1"];
   const params: Record<string, unknown> = { limit: q.limit };
@@ -690,7 +698,10 @@ export function searchPosts(q: PostSearchQuery): Post[] {
     params.unviewed_cutoff = new Date(nowMs - unviewed_ttl_hours * 3_600_000).toISOString();
     params.viewed_cutoff = new Date(nowMs - viewed_ttl_min * 60_000).toISOString();
   }
-  if (q.news_only) where.push("s_is_news = 1");
+  if (q.news_only) {
+    where.push("s_is_news = 1");
+    where.push(`COALESCE(s_news_confidence, 0) >= ${config.gates.min_news_confidence}`);
+  }
   if (q.since !== null) {
     where.push("harvested_at > @since");
     params.since = q.since;
@@ -1230,6 +1241,27 @@ export function getJob(id: number): Job | null {
 }
 export function finishJob(id: number, status: string, result: string, now: string): void {
   finishJobStmt.run({ id, status, result, now });
+}
+
+// Tiered retention: prune only dropped firehose noise (kept = 0) older than the
+// cutoff. Kept posts — and their longitudinal metric/seen history, the moat — are
+// preserved indefinitely. Orphaned metric/seen rows for pruned posts are swept.
+const prunePostsStmt = db.prepare("DELETE FROM posts WHERE kept = 0 AND harvested_at < ?");
+const pruneOrphanMetricsStmt = db.prepare(
+  "DELETE FROM post_metrics WHERE post_id NOT IN (SELECT id FROM posts)",
+);
+const pruneOrphanSeenStmt = db.prepare(
+  "DELETE FROM post_seen WHERE post_id NOT IN (SELECT id FROM posts)",
+);
+const prunePostsTx = db.transaction((cutoff: string) => {
+  const n = prunePostsStmt.run(cutoff).changes;
+  pruneOrphanMetricsStmt.run();
+  pruneOrphanSeenStmt.run();
+  return n;
+});
+export function prunePosts(dropRetentionDays: number): number {
+  const cutoff = new Date(Date.now() - dropRetentionDays * 86_400_000).toISOString();
+  return prunePostsTx(cutoff);
 }
 
 seedTopics(config.interest_topics);
