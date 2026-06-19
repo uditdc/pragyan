@@ -145,6 +145,14 @@ threads reconstruct; author profiles accumulate across runs.
 
 **Goal:** memory as a queryable graph that compounds, not a flat list of reports.
 
+> **Storage split (implemented):** scraped/pre-processed **bulk** stays in the DB — `topics`,
+> `entities`, `mentions`, `post_topics`, `events`, `jobs`. Claude's **prose artifacts**
+> (`reports`, `insights`, `topic_dossiers`, `leads`) are NOT in the DB — they live as Markdown
+> files (JSON frontmatter + body) under `config.kb_dir` (`knowledge/`), written/read by
+> `api/kbstore.ts` and indexed/served via tooling. ids are filename-stable strings; insight
+> approval rewrites the file in place. This keeps Claude's knowledge human-readable, portable,
+> and git-friendly while the DB carries the firehose query workload.
+
 ### `api/db.ts` — real migrations
 Replace the ad-hoc `PRAGMA table_info`+`ALTER` loop (db.ts:76–87) with **`PRAGMA user_version`**
 steps; set **`PRAGMA busy_timeout`** (multi-process — Step 4). Existing tables = migration 1.

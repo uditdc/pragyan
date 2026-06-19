@@ -36,7 +36,11 @@ interval: `/loop 30m /pragyan-loop`. The skill is the playbook — read it befor
 ## Conventions
 
 - Self-documenting code; no comments that restate what the code does.
-- One concern per file in `api/`; data access lives in `api/db.ts`; LLM calls go through
-  `api/budget.ts` (`callLLM`) so the shared Cerebras free-tier budget is never exceeded.
+- One concern per file in `api/`; LLM calls go through `api/budget.ts` (`callLLM`) so the
+  shared Cerebras free-tier budget is never exceeded.
+- **Storage split:** the SQLite DB (`api/db.ts`) holds scraped / pre-processed **bulk** —
+  posts, metrics, entities, topics, events. Your **prose artifacts** (reports, insights,
+  dossiers, leads) are Markdown files under `knowledge/` (`api/kbstore.ts`) that pragyan
+  indexes and serves via tooling — they never live in the DB.
 - Every insight/report must carry real provenance (`source_refs` / `citations` = post ids or
   URLs) — the approval action **fails closed** on ungrounded insights.
