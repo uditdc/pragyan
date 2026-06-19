@@ -1,0 +1,56 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import type { Insight, Report } from "../shared/kb.ts";
+
+process.env.XFEED_DB_PATH = ":memory:";
+const { runCapability } = await import("./capabilities.ts");
+
+test("submit_report persists and is readable via get_reports", async () => {
+  const report = (await runCapability("submit_report", {
+    topic: "ai",
+    title: "Capex supercycle",
+    body: "synthesis",
+    opinion: "watch power",
+    citations: [{ kind: "url", ref: "https://example.com", label: "Example" }],
+    model: "gpt-oss-120b",
+  })) as Report;
+  assert.ok(report.id);
+  const reports = (await runCapability("get_reports", { limit: 10 })) as Report[];
+  assert.ok(reports.some((r) => r.id === report.id && r.citations.length === 1));
+});
+
+test("submit_insight is pending and listed by get_insights", async () => {
+  const insight = (await runCapability("submit_insight", {
+    topic: "economics",
+    title: "Rotate into energy infra",
+    body: "...",
+    rationale: "capex thesis",
+    source_refs: ["https://example.com/a"],
+  })) as Insight;
+  assert.equal(insight.status, "pending");
+  const pending = (await runCapability("get_insights", { status: "pending" })) as Insight[];
+  assert.ok(pending.some((i) => i.id === insight.id));
+});
+
+test("get_top_topics returns ranked seeded topics", async () => {
+  const topics = (await runCapability("get_top_topics", { limit: 3 })) as Array<{ label: string }>;
+  assert.ok(Array.isArray(topics));
+  assert.ok(topics.length > 0 && topics.length <= 3);
+});
+
+test("update_dossier then get_dossier round-trips", async () => {
+  await runCapability("update_dossier", { topic: "ai", state: "AI capex is the macro story" });
+  const got = (await runCapability("get_dossier", { topic: "ai" })) as { dossier: { state: string } | null };
+  assert.ok(got.dossier);
+  assert.equal(got.dossier.state, "AI capex is the macro story");
+});
+
+test("get_signals returns a snapshot object", async () => {
+  const signals = await runCapability("get_signals", {});
+  assert.equal(typeof signals, "object");
+});
+
+test("unknown capability returns an error object", async () => {
+  const r = (await runCapability("nope", {})) as { error?: string };
+  assert.ok(r.error);
+});

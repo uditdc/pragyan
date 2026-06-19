@@ -118,6 +118,32 @@ async function refresh(): Promise<void> {
   }
 }
 
+// Targeted one-off harvest for the agent's request_harvest "hands" (v1): runs a
+// Google News search for an arbitrary query and enqueues the results for scoring.
+export async function harvestNewsQuery(query: string): Promise<number> {
+  const now = new Date().toISOString();
+  let posts: HarvestedPost[];
+  try {
+    posts = await fetchTopic(query, now);
+  } catch {
+    return 0;
+  }
+  let n = 0;
+  for (const post of posts) {
+    if (postExists(post.id)) continue;
+    upsertPost({
+      post,
+      kept: true,
+      drop_reason: null,
+      clickbait_heuristic: clickbaitScore(post.text),
+      scores: null,
+      scored_at: null,
+    });
+    n++;
+  }
+  return n;
+}
+
 export function startNews(): void {
   if (!config.sources.news.enabled) return;
   void refresh();

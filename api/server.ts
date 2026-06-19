@@ -19,6 +19,8 @@ import { startNews } from "./news.ts";
 import { getUptimeSnapshot, startUptime, checkNow } from "./uptime.ts";
 import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
 import { startScorer } from "./scorer.ts";
+import { runCapability } from "./capabilities.ts";
+import { CAPABILITIES } from "./capabilitySchema.ts";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -150,6 +152,19 @@ app.get("/summaries", (req, res) => {
 app.post("/summary/regenerate", async (_req, res) => {
   await generateSummary();
   res.json(getLatestSummary());
+});
+
+app.get("/tools", (_req, res) => {
+  res.json({ tools: CAPABILITIES });
+});
+
+app.post("/tools/:name", async (req, res) => {
+  const args = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+  try {
+    res.json({ result: await runCapability(req.params.name, args) });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 startMarkets();

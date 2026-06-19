@@ -224,6 +224,18 @@ const migrations: Array<() => void> = [
       );
       CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
     `),
+  () =>
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        params TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        result TEXT,
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+      );
+    `),
 ];
 
 let userVersion = db.pragma("user_version", { simple: true }) as number;
@@ -1107,6 +1119,117 @@ const eventsSinceStmt = db.prepare<[string, number], EventRow>(
 );
 export function getEventsSince(since: string, limit: number): EventRow[] {
   return eventsSinceStmt.all(since, limit);
+}
+
+const postByIdStmt = db.prepare<[string], Row>("SELECT * FROM posts WHERE id = ?");
+export function getPostById(id: string): Post | null {
+  const row = postByIdStmt.get(id);
+  return row ? rowToPost(row) : null;
+}
+
+// Ranks the configured topics by recent scored-post volume weighted by relevance,
+// persists the ranking, and returns it (drives the agent's get_top_topics tool).
+const topicVolStmt = db.prepare<{ label: string; cutoff: string }, { n: number; rel: number | null }>(
+  `SELECT COUNT(*) AS n, AVG(s_relevance) AS rel FROM posts
+   WHERE kept = 1 AND scored_at IS NOT NULL AND harvested_at > @cutoff AND text LIKE @label`,
+);
+export function getTopTopics(limit: number): Array<Topic & { volume: number; avg_relevance: number }> {
+  const cutoff = new Date(Date.now() - 48 * 3_600_000).toISOString();
+  const now = new Date().toISOString();
+  const ranked = listTopics()
+    .map((t) => {
+      const row = topicVolStmt.get({ label: `%${t.label}%`, cutoff });
+      const volume = row?.n ?? 0;
+      const avg = row?.rel ?? 0;
+      const priority = volume * (0.5 + avg);
+      return { ...t, volume, avg_relevance: avg, priority };
+    })
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, limit);
+  for (const t of ranked) setTopicRanking(t.id, t.priority, t.avg_relevance, now);
+  return ranked;
+}
+
+// Posts gaining engagement fastest — the "what's moving" signal only an always-on
+// sensor can produce. Candidates are posts with >=2 metric snapshots in the window.
+const trendingCandidatesStmt = db.prepare<[string], { post_id: string }>(
+  "SELECT post_id FROM post_metrics WHERE observed_at > ? GROUP BY post_id HAVING COUNT(*) >= 2",
+);
+export function getTrending(limit: number): Array<{ post: Post; velocity: number }> {
+  const cutoff = new Date(Date.now() - 24 * 3_600_000).toISOString();
+  const out: Array<{ post: Post; velocity: number }> = [];
+  for (const { post_id } of trendingCandidatesStmt.all(cutoff)) {
+    const velocity = getPostVelocity(post_id);
+    if (velocity === null) continue;
+    const post = getPostById(post_id);
+    if (post) out.push({ post, velocity });
+  }
+  out.sort((a, b) => b.velocity - a.velocity);
+  return out.slice(0, limit);
+}
+
+const scoredSinceStmt = db.prepare<[string], { n: number }>(
+  "SELECT COUNT(*) AS n FROM posts WHERE scored_at > ?",
+);
+const newEntitiesStmt = db.prepare<[string], EntityRow>(
+  "SELECT * FROM entities WHERE first_seen > ? ORDER BY mention_count DESC LIMIT 20",
+);
+export function getChanges(since: string): {
+  posts_scored_since: number;
+  new_entities: Entity[];
+  events: ReturnType<typeof getEventsSince>;
+} {
+  return {
+    posts_scored_since: scoredSinceStmt.get(since)?.n ?? 0,
+    new_entities: newEntitiesStmt.all(since).map(rowToEntity),
+    events: getEventsSince(since, 100),
+  };
+}
+
+interface JobRow {
+  id: number;
+  kind: string;
+  params: string;
+  status: string;
+  result: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+export interface Job {
+  id: number;
+  kind: string;
+  params: unknown;
+  status: string;
+  result: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+function rowToJob(r: JobRow): Job {
+  let params: unknown = r.params;
+  try {
+    params = JSON.parse(r.params);
+  } catch {
+    /* leave as string */
+  }
+  return { ...r, params };
+}
+const insertJobStmt = db.prepare(
+  "INSERT INTO jobs (kind, params, status, created_at) VALUES (@kind, @params, 'pending', @now)",
+);
+const jobByIdStmt = db.prepare<[number], JobRow>("SELECT * FROM jobs WHERE id = ?");
+const finishJobStmt = db.prepare(
+  "UPDATE jobs SET status = @status, result = @result, finished_at = @now WHERE id = @id",
+);
+export function createJob(kind: string, params: unknown, now: string): Job {
+  const info = insertJobStmt.run({ kind, params: JSON.stringify(params), now });
+  return rowToJob(jobByIdStmt.get(Number(info.lastInsertRowid))!);
+}
+export function getJob(id: number): Job | null {
+  const row = jobByIdStmt.get(id);
+  return row ? rowToJob(row) : null;
+}
+export function finishJob(id: number, status: string, result: string, now: string): void {
+  finishJobStmt.run({ id, status, result, now });
 }
 
 seedTopics(config.interest_topics);

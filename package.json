@@ -9,12 +9,14 @@
     "seed": "tsx --env-file-if-exists=.env api/seed.ts",
     "tui": "tsx tui/index.tsx",
     "app": "tsx start.tsx",
+    "mcp": "tsx api/mcp.ts",
     "test:ext": "node extension/test/parse.test.mjs && node extension/test/scroll.test.mjs",
     "test:ext:e2e": "node extension/test/ingest.e2e.mjs",
     "test:api": "node --import tsx --test api/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^11.8.1",
     "express": "^4.21.2",
     "fast-xml-parser": "^5.8.0",
