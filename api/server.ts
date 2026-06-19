@@ -21,6 +21,15 @@ import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
 import { startScorer } from "./scorer.ts";
 import { runCapability } from "./capabilities.ts";
 import { CAPABILITIES } from "./capabilitySchema.ts";
+import {
+  listInsights,
+  listReports,
+  getInsight,
+  setInsightStatus,
+  recordEvent,
+} from "./db.ts";
+import { action } from "./action.ts";
+import type { InsightStatus } from "../shared/kb.ts";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -152,6 +161,44 @@ app.get("/summaries", (req, res) => {
 app.post("/summary/regenerate", async (_req, res) => {
   await generateSummary();
   res.json(getLatestSummary());
+});
+
+app.get("/insights", (req, res) => {
+  const status = typeof req.query.status === "string" ? (req.query.status as InsightStatus) : null;
+  const limit = Math.min(200, Number(req.query.limit ?? 100) || 100);
+  res.json({ insights: listInsights(status, limit) });
+});
+
+app.get("/reports", (req, res) => {
+  const limit = Math.min(200, Number(req.query.limit ?? 50) || 50);
+  res.json({ reports: listReports(limit) });
+});
+
+app.post("/insights/:id/approve", (req, res) => {
+  const id = Number(req.params.id);
+  const insight = getInsight(id);
+  if (!insight) {
+    res.status(404).json({ error: "insight not found" });
+    return;
+  }
+  const now = new Date().toISOString();
+  const result = action(insight);
+  const updated = setInsightStatus(id, "approved", now, result);
+  recordEvent("approve", { insight_id: id }, now);
+  res.json({ insight: updated });
+});
+
+app.post("/insights/:id/reject", (req, res) => {
+  const id = Number(req.params.id);
+  const insight = getInsight(id);
+  if (!insight) {
+    res.status(404).json({ error: "insight not found" });
+    return;
+  }
+  const now = new Date().toISOString();
+  const updated = setInsightStatus(id, "rejected", now);
+  recordEvent("reject", { insight_id: id }, now);
+  res.json({ insight: updated });
 });
 
 app.get("/tools", (_req, res) => {

@@ -1,7 +1,7 @@
 import { P } from "./theme.ts";
 import { Bar, type Seg } from "./Bar.tsx";
 
-export const TABS = ["dashboard", "feed", "markets", "uptime"] as const;
+export const TABS = ["dashboard", "feed", "markets", "uptime", "insights", "reports"] as const;
 
 const TITLE_STOPS = [P.accent, P.x, P.log];
 
