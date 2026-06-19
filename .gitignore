@@ -5,3 +5,4 @@ api/*.db-wal
 *.log
 .env
 TODO
+knowledge/

@@ -60,6 +60,7 @@ export interface Config {
     history: number;
     services: { name: string; url: string }[];
   };
+  kb_dir: string;
   maintenance: { drop_retention_days: number; interval_ms: number };
   server: { host: string; port: number; db_path: string };
 }

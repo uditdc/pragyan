@@ -22,13 +22,8 @@ import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
 import { startScorer } from "./scorer.ts";
 import { runCapability } from "./capabilities.ts";
 import { CAPABILITIES } from "./capabilitySchema.ts";
-import {
-  listInsights,
-  listReports,
-  getInsight,
-  setInsightStatus,
-  recordEvent,
-} from "./db.ts";
+import { recordEvent } from "./db.ts";
+import { listInsights, listReports, getInsight, setInsightStatus } from "./kbstore.ts";
 import { action } from "./action.ts";
 import type { InsightStatus } from "../shared/kb.ts";
 
@@ -176,7 +171,7 @@ app.get("/reports", (req, res) => {
 });
 
 app.post("/insights/:id/approve", (req, res) => {
-  const id = Number(req.params.id);
+  const id = req.params.id;
   const insight = getInsight(id);
   if (!insight) {
     res.status(404).json({ error: "insight not found" });
@@ -190,7 +185,7 @@ app.post("/insights/:id/approve", (req, res) => {
 });
 
 app.post("/insights/:id/reject", (req, res) => {
-  const id = Number(req.params.id);
+  const id = req.params.id;
   const insight = getInsight(id);
   if (!insight) {
     res.status(404).json({ error: "insight not found" });

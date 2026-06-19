@@ -92,10 +92,10 @@ export async function fetchReports(baseUrl: string): Promise<Report[]> {
   return ((await res.json()) as { reports: Report[] }).reports;
 }
 
-export async function approveInsight(baseUrl: string, id: number): Promise<void> {
+export async function approveInsight(baseUrl: string, id: string): Promise<void> {
   await fetch(`${baseUrl}/insights/${id}/approve`, { method: "POST", signal: AbortSignal.timeout(5000) });
 }
 
-export async function rejectInsight(baseUrl: string, id: number): Promise<void> {
+export async function rejectInsight(baseUrl: string, id: string): Promise<void> {
   await fetch(`${baseUrl}/insights/${id}/reject`, { method: "POST", signal: AbortSignal.timeout(5000) });
 }

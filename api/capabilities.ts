@@ -6,20 +6,21 @@ import {
   createJob,
   finishJob,
   getChanges,
-  getDossier,
   getJob,
-  getTopicByLabel,
   getTopTopics,
   getTrending,
+  searchPosts,
+  seedTopics,
+} from "./db.ts";
+import {
+  getDossier,
   insertInsight,
   insertLead,
   insertReport,
   listInsights,
   listReports,
-  searchPosts,
-  seedTopics,
   upsertDossier,
-} from "./db.ts";
+} from "./kbstore.ts";
 
 const PASSTHROUGH = new Set(["search_feed", "recent_feed", "search_summaries", "get_latest_summary"]);
 
@@ -31,14 +32,10 @@ function clampNum(raw: unknown, fallback: number, max: number): number {
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
-function resolveTopicId(label: unknown): number | null {
+function topicOf(label: unknown): string | null {
   if (typeof label !== "string" || !label.trim()) return null;
-  let t = getTopicByLabel(label);
-  if (!t) {
-    seedTopics([label]);
-    t = getTopicByLabel(label);
-  }
-  return t?.id ?? null;
+  seedTopics([label]); // make a Claude-introduced topic discoverable to get_top_topics
+  return label;
 }
 
 function queryMemory(args: Record<string, unknown>): unknown {
@@ -91,8 +88,8 @@ export async function runCapability(name: string, args: Record<string, unknown>)
     case "query_memory":
       return queryMemory(args);
     case "get_dossier": {
-      const id = resolveTopicId(args.topic);
-      return id ? { topic: args.topic, dossier: getDossier(id) } : null;
+      const topic = topicOf(args.topic);
+      return topic ? { topic, dossier: getDossier(topic) } : null;
     }
     case "get_reports":
       return listReports(clampNum(args.limit, 10, 50));
@@ -116,7 +113,7 @@ export async function runCapability(name: string, args: Record<string, unknown>)
       return insertReport({
         created_at: now,
         author: "claude",
-        topic_id: resolveTopicId(args.topic),
+        topic: topicOf(args.topic),
         title: str(args.title),
         body: str(args.body),
         opinion: str(args.opinion),
@@ -125,8 +122,8 @@ export async function runCapability(name: string, args: Record<string, unknown>)
       });
     case "submit_insight":
       return insertInsight({
-        report_id: args.report_id != null ? Number(args.report_id) : null,
-        topic_id: resolveTopicId(args.topic),
+        report_id: args.report_id != null ? String(args.report_id) : null,
+        topic: topicOf(args.topic),
         title: str(args.title),
         body: str(args.body),
         rationale: str(args.rationale),
@@ -134,12 +131,12 @@ export async function runCapability(name: string, args: Record<string, unknown>)
         created_at: now,
       });
     case "submit_lead":
-      insertLead(str(args.note), resolveTopicId(args.topic), now);
+      insertLead(str(args.note), topicOf(args.topic), now);
       return { ok: true };
     case "update_dossier": {
-      const id = resolveTopicId(args.topic);
-      if (!id) return { error: "unknown topic" };
-      upsertDossier(id, str(args.state), "claude", now);
+      const topic = topicOf(args.topic);
+      if (!topic) return { error: "missing topic" };
+      upsertDossier(topic, str(args.state), "claude", now);
       return { ok: true };
     }
     default:

@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
 import type { Insight, Report } from "../shared/kb.ts";
 
 process.env.XFEED_DB_PATH = ":memory:";
+rmSync("/tmp/pragyan-caps-kb", { recursive: true, force: true });
+process.env.XFEED_KB_DIR = "/tmp/pragyan-caps-kb";
 const { runCapability } = await import("./capabilities.ts");
 
 test("submit_report persists and is readable via get_reports", async () => {

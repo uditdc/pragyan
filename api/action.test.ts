@@ -5,9 +5,9 @@ import { action } from "./action.ts";
 
 function insight(over: Partial<Insight> = {}): Insight {
   return {
-    id: 1,
+    id: "1",
     report_id: null,
-    topic_id: null,
+    topic: null,
     status: "pending",
     title: "Rotate into energy infra",
     body: "...",

@@ -12,17 +12,7 @@ import type {
 } from "../shared/post.ts";
 import { engagementOf, SCHEMA_VERSION } from "../shared/post.ts";
 import type { Digest, SummaryRecord, SummaryStatus } from "../shared/summary.ts";
-import type {
-  Citation,
-  Dossier,
-  Entity,
-  EventKind,
-  Insight,
-  InsightStatus,
-  Lead,
-  Report,
-  Topic,
-} from "../shared/kb.ts";
+import type { Entity, EventKind, Topic } from "../shared/kb.ts";
 import { config } from "./config.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -172,47 +162,6 @@ const migrations: Array<() => void> = [
         post_id TEXT NOT NULL,
         topic_id INTEGER NOT NULL,
         PRIMARY KEY (post_id, topic_id)
-      );
-      CREATE TABLE IF NOT EXISTS topic_dossiers (
-        topic_id INTEGER PRIMARY KEY,
-        state TEXT NOT NULL DEFAULT '',
-        updated_at TEXT,
-        updated_by TEXT
-      );
-      CREATE TABLE IF NOT EXISTS reports (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        created_at TEXT NOT NULL,
-        author TEXT NOT NULL DEFAULT 'claude',
-        topic_id INTEGER,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        opinion TEXT NOT NULL DEFAULT '',
-        citations TEXT NOT NULL DEFAULT '[]',
-        model TEXT
-      );
-      CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at);
-      CREATE TABLE IF NOT EXISTS insights (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        report_id INTEGER,
-        topic_id INTEGER,
-        status TEXT NOT NULL DEFAULT 'pending',
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        rationale TEXT NOT NULL DEFAULT '',
-        source_refs TEXT NOT NULL DEFAULT '[]',
-        created_at TEXT NOT NULL,
-        approved_at TEXT,
-        rejected_at TEXT,
-        acted_at TEXT,
-        action_result TEXT
-      );
-      CREATE INDEX IF NOT EXISTS idx_insights_status ON insights(status, created_at);
-      CREATE TABLE IF NOT EXISTS leads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        note TEXT NOT NULL,
-        topic_id INTEGER,
-        created_at TEXT NOT NULL,
-        consumed_at TEXT
       );
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -951,155 +900,10 @@ export function linkPostTopic(postId: string, topicId: number): void {
   linkPostTopicStmt.run(postId, topicId);
 }
 
-interface ReportRow {
-  id: number;
-  created_at: string;
-  author: string;
-  topic_id: number | null;
-  title: string;
-  body: string;
-  opinion: string;
-  citations: string;
-  model: string | null;
-}
-function rowToReport(r: ReportRow): Report {
-  return { ...r, citations: JSON.parse(r.citations) as Citation[] };
-}
-const insertReportStmt = db.prepare(`
-  INSERT INTO reports (created_at, author, topic_id, title, body, opinion, citations, model)
-  VALUES (@created_at, @author, @topic_id, @title, @body, @opinion, @citations, @model)
-`);
-const getReportStmt = db.prepare<[number], ReportRow>("SELECT * FROM reports WHERE id = ?");
-
-export interface NewReport {
-  created_at: string;
-  author: string;
-  topic_id: number | null;
-  title: string;
-  body: string;
-  opinion: string;
-  citations: Citation[];
-  model: string | null;
-}
-export function insertReport(r: NewReport): Report {
-  const info = insertReportStmt.run({ ...r, citations: JSON.stringify(r.citations) });
-  return rowToReport(getReportStmt.get(Number(info.lastInsertRowid))!);
-}
-export function getReport(id: number): Report | null {
-  const row = getReportStmt.get(id);
-  return row ? rowToReport(row) : null;
-}
-const reportsStmt = db.prepare<[number], ReportRow>(
-  "SELECT * FROM reports ORDER BY created_at DESC, id DESC LIMIT ?",
-);
-export function listReports(limit: number): Report[] {
-  return reportsStmt.all(limit).map(rowToReport);
-}
-
-interface InsightRow {
-  id: number;
-  report_id: number | null;
-  topic_id: number | null;
-  status: string;
-  title: string;
-  body: string;
-  rationale: string;
-  source_refs: string;
-  created_at: string;
-  approved_at: string | null;
-  rejected_at: string | null;
-  acted_at: string | null;
-  action_result: string | null;
-}
-function rowToInsight(r: InsightRow): Insight {
-  return {
-    ...r,
-    status: r.status as InsightStatus,
-    source_refs: JSON.parse(r.source_refs) as string[],
-  };
-}
-const insertInsightStmt = db.prepare(`
-  INSERT INTO insights (report_id, topic_id, status, title, body, rationale, source_refs, created_at)
-  VALUES (@report_id, @topic_id, 'pending', @title, @body, @rationale, @source_refs, @created_at)
-`);
-const getInsightStmt = db.prepare<[number], InsightRow>("SELECT * FROM insights WHERE id = ?");
-
-export interface NewInsight {
-  report_id: number | null;
-  topic_id: number | null;
-  title: string;
-  body: string;
-  rationale: string;
-  source_refs: string[];
-  created_at: string;
-}
-export function insertInsight(i: NewInsight): Insight {
-  const info = insertInsightStmt.run({ ...i, source_refs: JSON.stringify(i.source_refs) });
-  return rowToInsight(getInsightStmt.get(Number(info.lastInsertRowid))!);
-}
-export function getInsight(id: number): Insight | null {
-  const row = getInsightStmt.get(id);
-  return row ? rowToInsight(row) : null;
-}
-const insightsByStatusStmt = db.prepare<[string, number], InsightRow>(
-  "SELECT * FROM insights WHERE status = ? ORDER BY created_at DESC, id DESC LIMIT ?",
-);
-const insightsAllStmt = db.prepare<[number], InsightRow>(
-  "SELECT * FROM insights ORDER BY created_at DESC, id DESC LIMIT ?",
-);
-export function listInsights(status: InsightStatus | null, limit: number): Insight[] {
-  const rows = status ? insightsByStatusStmt.all(status, limit) : insightsAllStmt.all(limit);
-  return rows.map(rowToInsight);
-}
-const setInsightStatusStmt = db.prepare(`
-  UPDATE insights SET
-    status = @status,
-    approved_at = CASE WHEN @status = 'approved' THEN @now ELSE approved_at END,
-    rejected_at = CASE WHEN @status = 'rejected' THEN @now ELSE rejected_at END,
-    acted_at = CASE WHEN @status = 'acted' THEN @now ELSE acted_at END,
-    action_result = COALESCE(@action_result, action_result)
-  WHERE id = @id
-`);
-export function setInsightStatus(
-  id: number,
-  status: InsightStatus,
-  now: string,
-  action_result: string | null = null,
-): Insight | null {
-  setInsightStatusStmt.run({ id, status, now, action_result });
-  return getInsight(id);
-}
-
-const insertLeadStmt = db.prepare(
-  "INSERT INTO leads (note, topic_id, created_at) VALUES (@note, @topic_id, @created_at)",
-);
-export function insertLead(note: string, topic_id: number | null, created_at: string): void {
-  insertLeadStmt.run({ note, topic_id, created_at });
-}
-const leadsStmt = db.prepare<[number], Lead>(
-  "SELECT * FROM leads WHERE consumed_at IS NULL ORDER BY created_at DESC LIMIT ?",
-);
-export function listLeads(limit: number): Lead[] {
-  return leadsStmt.all(limit);
-}
-
-const getDossierStmt = db.prepare<[number], Dossier>("SELECT * FROM topic_dossiers WHERE topic_id = ?");
-export function getDossier(topicId: number): Dossier | null {
-  return getDossierStmt.get(topicId) ?? null;
-}
-const upsertDossierStmt = db.prepare(`
-  INSERT INTO topic_dossiers (topic_id, state, updated_at, updated_by)
-  VALUES (@topic_id, @state, @now, @updated_by)
-  ON CONFLICT(topic_id) DO UPDATE SET state = @state, updated_at = @now, updated_by = @updated_by
-`);
-export function upsertDossier(topicId: number, state: string, updatedBy: string, now: string): void {
-  upsertDossierStmt.run({ topic_id: topicId, state, now, updated_by: updatedBy });
-}
-
 export interface EventRef {
   post_id?: string | null;
   topic_id?: number | null;
-  insight_id?: number | null;
+  insight_id?: string | number | null;
   entity_id?: number | null;
 }
 const insertEventStmt = db.prepare(`
@@ -1121,7 +925,7 @@ interface EventRow {
   kind: string;
   post_id: string | null;
   topic_id: number | null;
-  insight_id: number | null;
+  insight_id: string | number | null;
   entity_id: number | null;
   created_at: string;
 }

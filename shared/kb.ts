@@ -33,11 +33,14 @@ export interface Citation {
   label: string;
 }
 
+// Filesystem-backed (api/kbstore.ts): Claude's prose artifacts live as Markdown
+// files with a JSON frontmatter header, indexed by pragyan — never in the DB.
+// ids are filename-stable strings.
 export interface Report {
-  id: number;
+  id: string;
   created_at: string;
   author: string;
-  topic_id: number | null;
+  topic: string | null;
   title: string;
   body: string;
   opinion: string;
@@ -46,9 +49,9 @@ export interface Report {
 }
 
 export interface Insight {
-  id: number;
-  report_id: number | null;
-  topic_id: number | null;
+  id: string;
+  report_id: string | null;
+  topic: string | null;
   status: InsightStatus;
   title: string;
   body: string;
@@ -62,15 +65,15 @@ export interface Insight {
 }
 
 export interface Lead {
-  id: number;
+  id: string;
   note: string;
-  topic_id: number | null;
+  topic: string | null;
   created_at: string;
   consumed_at: string | null;
 }
 
 export interface Dossier {
-  topic_id: number;
+  topic: string;
   state: string;
   updated_at: string | null;
   updated_by: string | null;
