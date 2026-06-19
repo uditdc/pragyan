@@ -1,5 +1,5 @@
 (function () {
-  const { TWEET, parseTweet } = globalThis.PragyanSelectors;
+  const { source, TWEET, parse } = globalThis.PragyanAdapter;
 
   const DEFAULTS = {
     apiBase: "http://127.0.0.1:8787",
@@ -20,6 +20,9 @@
   const captured = new Map();
   let pending = [];
   let sent = 0;
+  let ordinal = 0;
+  let parseFailStreak = 0;
+  let healthBad = false;
   let config = { ...DEFAULTS };
   let running = false;
   let stopRequested = false;
@@ -38,22 +41,35 @@
 
   function harvest() {
     let added = 0;
+    let okParses = 0;
+    let nullParses = 0;
     for (const article of document.querySelectorAll(TWEET)) {
       let post = null;
       try {
-        post = parseTweet(article);
+        post = parse(article);
       } catch {
         post = null;
       }
-      if (!post || !post.id || captured.has(post.id)) continue;
+      if (!post || !post.id) {
+        nullParses++;
+        continue;
+      }
+      okParses++;
+      if (captured.has(post.id)) continue;
       captured.set(post.id, true);
+      post.source = source;
+      post.feed_position = ordinal++;
       post.harvested_at = new Date().toISOString();
       pending.push(post);
       added++;
     }
+    parseFailStreak = nullParses > 0 && okParses === 0 ? parseFailStreak + 1 : 0;
+    healthBad = parseFailStreak >= 3;
     if (added) {
       render();
       if (pending.length >= config.batchSize) flush();
+    } else if (parseFailStreak === 3) {
+      render();
     }
   }
 
@@ -153,10 +169,13 @@
       badge.addEventListener("click", () => (running ? stopAuto() : startAuto()));
       document.documentElement.appendChild(badge);
     }
-    badge.style.color = error ? "#d08176" : state === "break" ? "#c8a45c" : running ? "#5cb6ac" : "#969cab";
-    const icon = error ? STATE_ICON.error : STATE_ICON[state];
+    const isErr = error || healthBad;
+    badge.style.color = isErr ? "#d08176" : state === "break" ? "#c8a45c" : running ? "#5cb6ac" : "#969cab";
+    const icon = isErr ? STATE_ICON.error : STATE_ICON[state];
     let label = state;
-    if (state === "break") {
+    if (healthBad) {
+      label = "selectors?";
+    } else if (state === "break") {
       const s = Math.ceil(breakRemainingMs / 1000);
       label = `break ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
     }

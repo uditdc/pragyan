@@ -6,6 +6,7 @@ import { dummyScore } from "./dummyScorer.ts";
 import {
   postExists,
   upsertPost,
+  recordObservation,
   queryFeed,
   markViewed,
   dismiss,
@@ -60,6 +61,13 @@ app.post("/ingest", (req, res) => {
       clickbait_heuristic: verdict.clickbait_heuristic,
       scores,
       scored_at: scores ? now : null,
+    });
+
+    recordObservation({
+      post,
+      kept: verdict.kept,
+      observed_at: now,
+      feed_position: typeof post.feed_position === "number" ? post.feed_position : null,
     });
 
     if (isDuplicate) result.duplicate++;

@@ -11,6 +11,7 @@
     "app": "tsx start.tsx",
     "test:ext": "node extension/test/parse.test.mjs && node extension/test/scroll.test.mjs",
     "test:ext:e2e": "node extension/test/ingest.e2e.mjs",
+    "test:api": "node --import tsx --test api/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

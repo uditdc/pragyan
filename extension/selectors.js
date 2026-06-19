@@ -141,4 +141,7 @@
   }
 
   globalThis.PragyanSelectors = { TWEET, parseTweet };
+  // Source adapter seam: each source (x, later linkedin/reddit) exposes the same
+  // { source, TWEET, parse } shape so content.js stays source-agnostic.
+  globalThis.PragyanAdapter = { source: "x", TWEET, parse: parseTweet };
 })();

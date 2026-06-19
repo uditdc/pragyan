@@ -2,20 +2,24 @@ import Database from "better-sqlite3";
 import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute } from "node:path";
 import type {
+  AuthorProfile,
   FeedSort,
   HarvestedPost,
   MediaType,
+  MetricSnapshot,
   Post,
   Scores,
 } from "../shared/post.ts";
-import { SCHEMA_VERSION } from "../shared/post.ts";
+import { engagementOf, SCHEMA_VERSION } from "../shared/post.ts";
 import type { Digest, SummaryRecord, SummaryStatus } from "../shared/summary.ts";
 import { config } from "./config.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const dbPath = isAbsolute(config.server.db_path)
-  ? config.server.db_path
-  : join(repoRoot, config.server.db_path);
+const configuredPath = process.env.XFEED_DB_PATH ?? config.server.db_path;
+const dbPath =
+  configuredPath === ":memory:" || isAbsolute(configuredPath)
+    ? configuredPath
+    : join(repoRoot, configuredPath);
 
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
@@ -71,6 +75,35 @@ db.exec(`
     digest TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_summaries_generated ON summaries(generated_at);
+
+  CREATE TABLE IF NOT EXISTS post_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    replies INTEGER NOT NULL,
+    reposts INTEGER NOT NULL,
+    likes INTEGER NOT NULL,
+    views INTEGER NOT NULL,
+    engagement INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_post_metrics ON post_metrics(post_id, observed_at);
+
+  CREATE TABLE IF NOT EXISTS post_seen (
+    post_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    feed_position INTEGER,
+    PRIMARY KEY (post_id, observed_at)
+  );
+
+  CREATE TABLE IF NOT EXISTS authors (
+    handle TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    post_count INTEGER NOT NULL DEFAULT 0,
+    kept_count INTEGER NOT NULL DEFAULT 0
+  );
 `);
 
 const existingColumns = new Set(
@@ -248,6 +281,109 @@ export function upsertPost(s: StoredPost): void {
     viewed_at: null,
     expired_at: null,
   });
+}
+
+const latestMetricStmt = db.prepare<
+  [string],
+  { replies: number; reposts: number; likes: number; views: number }
+>(
+  "SELECT replies, reposts, likes, views FROM post_metrics WHERE post_id = ? ORDER BY observed_at DESC, id DESC LIMIT 1",
+);
+
+const insertMetricStmt = db.prepare(`
+  INSERT INTO post_metrics (post_id, observed_at, replies, reposts, likes, views, engagement)
+  VALUES (@post_id, @observed_at, @replies, @reposts, @likes, @views, @engagement)
+`);
+
+const insertSeenStmt = db.prepare(
+  "INSERT OR IGNORE INTO post_seen (post_id, observed_at, feed_position) VALUES (@post_id, @observed_at, @feed_position)",
+);
+
+const upsertAuthorStmt = db.prepare(`
+  INSERT INTO authors (handle, name, source, first_seen, last_seen, post_count, kept_count)
+  VALUES (@handle, @name, @source, @now, @now, 1, @kept)
+  ON CONFLICT(handle) DO UPDATE SET
+    name = excluded.name,
+    last_seen = excluded.last_seen,
+    post_count = post_count + 1,
+    kept_count = kept_count + @kept
+`);
+
+export interface Observation {
+  post: HarvestedPost;
+  kept: boolean;
+  observed_at: string;
+  feed_position: number | null;
+}
+
+const recordObservationTx = db.transaction((o: Observation) => {
+  const m = o.post.metrics;
+  const last = latestMetricStmt.get(o.post.id);
+  const changed =
+    !last ||
+    last.replies !== m.replies ||
+    last.reposts !== m.reposts ||
+    last.likes !== m.likes ||
+    last.views !== m.views;
+  if (changed) {
+    insertMetricStmt.run({
+      post_id: o.post.id,
+      observed_at: o.observed_at,
+      replies: m.replies,
+      reposts: m.reposts,
+      likes: m.likes,
+      views: m.views,
+      engagement: engagementOf(m),
+    });
+  }
+  insertSeenStmt.run({
+    post_id: o.post.id,
+    observed_at: o.observed_at,
+    feed_position: o.feed_position,
+  });
+  upsertAuthorStmt.run({
+    handle: o.post.author_handle,
+    name: o.post.author_name,
+    source: o.post.source,
+    now: o.observed_at,
+    kept: o.kept ? 1 : 0,
+  });
+});
+
+export function recordObservation(o: Observation): void {
+  recordObservationTx(o);
+}
+
+const metricsHistStmt = db.prepare<[string], MetricSnapshot>(
+  "SELECT observed_at, replies, reposts, likes, views, engagement FROM post_metrics WHERE post_id = ? ORDER BY observed_at ASC, id ASC",
+);
+
+export function getPostMetricsHistory(postId: string): MetricSnapshot[] {
+  return metricsHistStmt.all(postId);
+}
+
+export function getPostVelocity(postId: string): number | null {
+  const h = metricsHistStmt.all(postId);
+  if (h.length < 2) return null;
+  const first = h[0];
+  const last = h[h.length - 1];
+  const hours = (Date.parse(last.observed_at) - Date.parse(first.observed_at)) / 3_600_000;
+  if (hours <= 0) return null;
+  return (last.engagement - first.engagement) / hours;
+}
+
+const seenStmt = db.prepare<[string], { observed_at: string; feed_position: number | null }>(
+  "SELECT observed_at, feed_position FROM post_seen WHERE post_id = ? ORDER BY observed_at ASC",
+);
+
+export function getPostSeen(postId: string): { observed_at: string; feed_position: number | null }[] {
+  return seenStmt.all(postId);
+}
+
+const authorStmt = db.prepare<[string], AuthorProfile>("SELECT * FROM authors WHERE handle = ?");
+
+export function getAuthor(handle: string): AuthorProfile | null {
+  return authorStmt.get(handle) ?? null;
 }
 
 const markViewedStmt = db.prepare(
