@@ -229,10 +229,9 @@ setInterval(() => {
   }
 }, config.maintenance.interval_ms);
 
-const server = app.listen(config.server.port, config.server.host, () => {
-  console.log(
-    `x-feed-filter API on http://${config.server.host}:${config.server.port}`,
-  );
+const port = Number(process.env.XFEED_PORT) || config.server.port;
+const server = app.listen(port, config.server.host, () => {
+  console.log(`x-feed-filter API on http://${config.server.host}:${port}`);
   startUptime();
 });
 
