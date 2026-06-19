@@ -4,7 +4,7 @@ import { config } from "./config.ts";
 import { llmEnabled } from "./llm.ts";
 import { callLLM } from "./budget.ts";
 import { dummyScore } from "./dummyScorer.ts";
-import { getUnscoredPosts, updatePostScores, type ScoreUpdate } from "./db.ts";
+import { getUnscoredPosts, updatePostScores, recordEntityMention, type ScoreUpdate } from "./db.ts";
 
 // Cheap triage tier: coarse topic-relevance so the brain (Claude) sees the
 // high-signal slice, not the firehose. It is deliberately simple. When the
@@ -25,7 +25,8 @@ Score each post on 0..1 scales:
 - importance: how consequential the post is.
 - clickbait: bait / ragebait / empty hype.
 Also set is_news (true for newsworthy reporting) and news_confidence (0..1).
-Output JSON only, exactly: {"scores":[{"id","relevance","importance","clickbait","is_news","news_confidence"}]}.
+For each post also list up to 3 salient named entities as {"name","kind"} with kind in person|org|ticker|product|place|topic|other.
+Output JSON only, exactly: {"scores":[{"id","relevance","importance","clickbait","is_news","news_confidence","entities":[{"name","kind"}]}]}.
 Return one entry per input id, nothing else.`;
 
 function clamp01(v: unknown): number {
@@ -46,9 +47,14 @@ function payload(posts: Post[]): string {
   );
 }
 
-export async function scoreBatch(posts: Post[]): Promise<Map<string, Scores>> {
+export interface BatchResult {
+  scores: Map<string, Scores>;
+  entities: Array<{ postId: string; name: string; kind: string }>;
+}
+
+export async function scoreBatch(posts: Post[]): Promise<BatchResult> {
   const body = payload(posts);
-  const est = Math.ceil((SYSTEM_PROMPT.length + body.length) / 4) + posts.length * 30;
+  const est = Math.ceil((SYSTEM_PROMPT.length + body.length) / 4) + posts.length * 40;
   const res = await callLLM(
     "scorer",
     {
@@ -69,40 +75,51 @@ export async function scoreBatch(posts: Post[]): Promise<Map<string, Scores>> {
     parsed = {};
   }
 
-  const map = new Map<string, Scores>();
+  const scores = new Map<string, Scores>();
+  const entities: BatchResult["entities"] = [];
   if (Array.isArray(parsed.scores)) {
     for (const raw of parsed.scores as Record<string, unknown>[]) {
       const id = String(raw?.id ?? "");
       if (!id) continue;
-      map.set(id, {
+      scores.set(id, {
         relevance: clamp01(raw.relevance),
         importance: clamp01(raw.importance),
         clickbait: clamp01(raw.clickbait),
         is_news: Boolean(raw.is_news),
         news_confidence: clamp01(raw.news_confidence),
       });
+      if (Array.isArray(raw.entities)) {
+        for (const e of raw.entities as Record<string, unknown>[]) {
+          const name = String(e?.name ?? "").trim();
+          if (name) entities.push({ postId: id, name, kind: String(e?.kind ?? "other") });
+        }
+      }
     }
   }
-  return map;
+  return { scores, entities };
 }
 
 // Scores `posts`, falling back to the heuristic for any id the LLM didn't return
-// (or for the whole batch on error / no budget), then persists with scored_at set.
+// (or for the whole batch on error / no budget), persists with scored_at set, and
+// records any extracted entities into the graph.
 export async function scoreBatchSafe(posts: Post[], now: string): Promise<void> {
-  let scored = new Map<string, Scores>();
+  let result: BatchResult = { scores: new Map(), entities: [] };
   if (llmEnabled) {
     try {
-      scored = await scoreBatch(posts);
+      result = await scoreBatch(posts);
     } catch {
-      scored = new Map();
+      result = { scores: new Map(), entities: [] };
     }
   }
   const updates: ScoreUpdate[] = posts.map((p) => ({
     id: p.id,
-    scores: scored.get(p.id) ?? dummyScore(p, p.clickbait_heuristic),
+    scores: result.scores.get(p.id) ?? dummyScore(p, p.clickbait_heuristic),
     scored_at: now,
   }));
   updatePostScores(updates);
+  for (const e of result.entities) {
+    recordEntityMention(e.kind, e.name, { post_id: e.postId }, now);
+  }
 }
 
 let running = false;
