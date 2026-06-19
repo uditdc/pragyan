@@ -28,9 +28,10 @@
   },
   "scoring": {
     "model": "gpt-oss-120b",
-    "batch_size": 15,
-    "max_concurrent_batches": 2,
-    "poll_interval_ms": 5000
+    "batch_size": 30,
+    "max_concurrent_batches": 1,
+    "poll_interval_ms": 45000,
+    "engagement_floor_for_llm": 5
   },
   "expiry": {
     "mark_viewed_on": "select",

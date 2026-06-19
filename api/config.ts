@@ -28,6 +28,7 @@ export interface Config {
     batch_size: number;
     max_concurrent_batches: number;
     poll_interval_ms: number;
+    engagement_floor_for_llm: number;
   };
   expiry: {
     mark_viewed_on: string;

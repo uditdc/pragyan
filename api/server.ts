@@ -2,7 +2,6 @@ import express from "express";
 import type { HarvestedPost, IngestResult } from "../shared/post.ts";
 import { config } from "./config.ts";
 import { prefilter } from "./prefilter.ts";
-import { dummyScore } from "./dummyScorer.ts";
 import {
   postExists,
   upsertPost,
@@ -19,6 +18,7 @@ import { getSnapshot, startMarkets } from "./markets.ts";
 import { startNews } from "./news.ts";
 import { getUptimeSnapshot, startUptime, checkNow } from "./uptime.ts";
 import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
+import { startScorer } from "./scorer.ts";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -52,15 +52,14 @@ app.post("/ingest", (req, res) => {
     };
 
     const verdict = prefilter(post);
-    const scores = verdict.kept ? dummyScore(post, verdict.clickbait_heuristic) : null;
 
     upsertPost({
       post,
       kept: verdict.kept,
       drop_reason: verdict.drop_reason,
       clickbait_heuristic: verdict.clickbait_heuristic,
-      scores,
-      scored_at: scores ? now : null,
+      scores: null,
+      scored_at: null,
     });
 
     recordObservation({
@@ -155,6 +154,7 @@ app.post("/summary/regenerate", async (_req, res) => {
 
 startMarkets();
 startNews();
+startScorer();
 startSummary();
 
 const server = app.listen(config.server.port, config.server.host, () => {

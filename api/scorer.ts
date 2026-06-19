@@ -1,0 +1,137 @@
+import type { Post, Scores } from "../shared/post.ts";
+import { engagementOf } from "../shared/post.ts";
+import { config } from "./config.ts";
+import { llmEnabled } from "./llm.ts";
+import { callLLM } from "./budget.ts";
+import { dummyScore } from "./dummyScorer.ts";
+import { getUnscoredPosts, updatePostScores, type ScoreUpdate } from "./db.ts";
+
+// Cheap triage tier: coarse topic-relevance so the brain (Claude) sees the
+// high-signal slice, not the firehose. It is deliberately simple. When the
+// shared budget is exhausted or no LLM is configured, it falls back to the
+// engagement heuristic so the queue always drains (see docs/plans/phase6.md).
+
+const floor = config.scoring.engagement_floor_for_llm;
+
+// News (no engagement) is low-volume and high-value, so always LLM-score it;
+// the X firehose is gated by an engagement floor to bound LLM volume.
+function llmEligible(p: Post): boolean {
+  return p.source !== "x" || engagementOf(p.metrics) >= floor;
+}
+
+const SYSTEM_PROMPT = `You rank social and news posts for one reader. Reader interests: ${config.interest_topics.join(", ")}.
+Score each post on 0..1 scales:
+- relevance: topic match to the reader's interests (NOT popularity).
+- importance: how consequential the post is.
+- clickbait: bait / ragebait / empty hype.
+Also set is_news (true for newsworthy reporting) and news_confidence (0..1).
+Output JSON only, exactly: {"scores":[{"id","relevance","importance","clickbait","is_news","news_confidence"}]}.
+Return one entry per input id, nothing else.`;
+
+function clamp01(v: unknown): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return n < 0 ? 0 : n > 1 ? 1 : n;
+}
+
+function payload(posts: Post[]): string {
+  return JSON.stringify(
+    posts.map((p) => ({
+      id: p.id,
+      author: p.author_handle,
+      source: p.source,
+      text: p.text.slice(0, 280),
+      is_repost: p.is_repost,
+    })),
+  );
+}
+
+export async function scoreBatch(posts: Post[]): Promise<Map<string, Scores>> {
+  const body = payload(posts);
+  const est = Math.ceil((SYSTEM_PROMPT.length + body.length) / 4) + posts.length * 30;
+  const res = await callLLM(
+    "scorer",
+    {
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: body },
+      ],
+    },
+    est,
+  );
+
+  let parsed: { scores?: unknown };
+  try {
+    parsed = JSON.parse(res.choices[0]?.message?.content ?? "{}") as { scores?: unknown };
+  } catch {
+    parsed = {};
+  }
+
+  const map = new Map<string, Scores>();
+  if (Array.isArray(parsed.scores)) {
+    for (const raw of parsed.scores as Record<string, unknown>[]) {
+      const id = String(raw?.id ?? "");
+      if (!id) continue;
+      map.set(id, {
+        relevance: clamp01(raw.relevance),
+        importance: clamp01(raw.importance),
+        clickbait: clamp01(raw.clickbait),
+        is_news: Boolean(raw.is_news),
+        news_confidence: clamp01(raw.news_confidence),
+      });
+    }
+  }
+  return map;
+}
+
+// Scores `posts`, falling back to the heuristic for any id the LLM didn't return
+// (or for the whole batch on error / no budget), then persists with scored_at set.
+export async function scoreBatchSafe(posts: Post[], now: string): Promise<void> {
+  let scored = new Map<string, Scores>();
+  if (llmEnabled) {
+    try {
+      scored = await scoreBatch(posts);
+    } catch {
+      scored = new Map();
+    }
+  }
+  const updates: ScoreUpdate[] = posts.map((p) => ({
+    id: p.id,
+    scores: scored.get(p.id) ?? dummyScore(p, p.clickbait_heuristic),
+    scored_at: now,
+  }));
+  updatePostScores(updates);
+}
+
+let running = false;
+
+async function tick(): Promise<void> {
+  if (running) return;
+  running = true;
+  try {
+    const posts = getUnscoredPosts(config.scoring.batch_size);
+    if (posts.length === 0) return;
+    const now = new Date().toISOString();
+    const eligible = posts.filter(llmEligible);
+    const heuristic = posts.filter((p) => !llmEligible(p));
+    if (heuristic.length) {
+      updatePostScores(
+        heuristic.map((p) => ({ id: p.id, scores: dummyScore(p, p.clickbait_heuristic), scored_at: now })),
+      );
+    }
+    if (eligible.length) await scoreBatchSafe(eligible, now);
+  } catch (err) {
+    console.error("scorer tick failed:", err instanceof Error ? err.message : err);
+  } finally {
+    running = false;
+  }
+}
+
+export function startScorer(): void {
+  if (!llmEnabled) {
+    console.warn("LLM disabled — scorer uses the engagement heuristic fallback.");
+  }
+  setInterval(() => void tick(), config.scoring.poll_interval_ms);
+}

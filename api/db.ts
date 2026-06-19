@@ -283,6 +283,49 @@ export function upsertPost(s: StoredPost): void {
   });
 }
 
+const unscoredStmt = db.prepare<[number], Row>(
+  "SELECT * FROM posts WHERE kept = 1 AND scored_at IS NULL ORDER BY harvested_at DESC LIMIT ?",
+);
+
+export function getUnscoredPosts(limit: number): Post[] {
+  return unscoredStmt.all(limit).map(rowToPost);
+}
+
+const updateScoresStmt = db.prepare(`
+  UPDATE posts SET
+    s_relevance = @s_relevance,
+    s_importance = @s_importance,
+    s_clickbait = @s_clickbait,
+    s_is_news = @s_is_news,
+    s_news_confidence = @s_news_confidence,
+    scored_at = @scored_at
+  WHERE id = @id AND scored_at IS NULL
+`);
+
+export interface ScoreUpdate {
+  id: string;
+  scores: Scores;
+  scored_at: string;
+}
+
+const updateScoresTx = db.transaction((updates: ScoreUpdate[]) => {
+  for (const u of updates) {
+    updateScoresStmt.run({
+      id: u.id,
+      s_relevance: u.scores.relevance,
+      s_importance: u.scores.importance,
+      s_clickbait: u.scores.clickbait,
+      s_is_news: u.scores.is_news ? 1 : 0,
+      s_news_confidence: u.scores.news_confidence,
+      scored_at: u.scored_at,
+    });
+  }
+});
+
+export function updatePostScores(updates: ScoreUpdate[]): void {
+  updateScoresTx(updates);
+}
+
 const latestMetricStmt = db.prepare<
   [string],
   { replies: number; reposts: number; likes: number; views: number }
