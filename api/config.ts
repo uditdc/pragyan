@@ -9,6 +9,14 @@ export interface Config {
   weights: { importance: number; relevance: number; clickbait: number };
   gates: { min_news_confidence: number; news_only_default: boolean };
   feed: { max_age_hours: number };
+  llm: {
+    timeout_ms: number;
+    max_retries: number;
+    max_completion_tokens: number;
+    reasoning_effort: string;
+    limits: { rpm: number; rph: number; rpd: number; tpm: number; tph: number; tpd: number };
+    daily_token_budget: { scorer: number; summary: number };
+  };
   prefilter: {
     engagement_floor: number;
     drop_replies: boolean;
