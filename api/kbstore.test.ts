@@ -9,32 +9,8 @@ const kb = await import("./kbstore.ts");
 
 const NOW = "2026-06-01T00:00:00.000Z";
 
-test("report round-trips from the filesystem with mixed citations + body", () => {
-  const r = kb.insertReport({
-    created_at: NOW,
-    author: "claude",
-    topic: "ai",
-    title: "AI capex reshapes power markets",
-    body: "# Long-form\n\nbody markdown here.",
-    opinion: "watch utilities",
-    citations: [
-      { kind: "post", ref: "1900000000000000001", label: "@mvela" },
-      { kind: "url", ref: "https://example.com/a", label: "Example" },
-    ],
-    model: "gpt-oss-120b",
-  });
-  assert.ok(r.id);
-  const got = kb.getReport(r.id);
-  assert.ok(got);
-  assert.equal(got.body, "# Long-form\n\nbody markdown here.");
-  assert.equal(got.citations.length, 2);
-  assert.equal(got.citations[1].kind, "url");
-  assert.ok(kb.listReports(10).some((x) => x.id === r.id));
-});
-
 test("insight starts pending and approves with a timestamp", () => {
   const i = kb.insertInsight({
-    report_id: null,
     topic: "economics",
     title: "Rotate into energy infra",
     body: "...",

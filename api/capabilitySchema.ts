@@ -72,12 +72,6 @@ export const CAPABILITIES: CapabilityDescriptor[] = [
     inputSchema: obj({ topic: str }),
   },
   {
-    name: "get_reports",
-    kind: "memory",
-    description: "Claude's prior reports, most recent first — build on accumulated judgment.",
-    inputSchema: obj({ limit: num }),
-  },
-  {
     name: "get_insights",
     kind: "memory",
     description: "Stored insights, optionally filtered by status (pending/approved/rejected/acted).",
@@ -105,16 +99,10 @@ export const CAPABILITIES: CapabilityDescriptor[] = [
   },
   // ── write ──
   {
-    name: "submit_report",
-    kind: "write",
-    description: "Store a long-form analysis. citations: [{kind:'post'|'url', ref, label}].",
-    inputSchema: obj({ topic: str, title: str, body: str, opinion: str, citations: { type: "array" }, model: str }),
-  },
-  {
     name: "submit_insight",
     kind: "write",
     description: "Store an actionable insight (status starts pending, awaits one human approval). source_refs: post ids or URLs.",
-    inputSchema: obj({ topic: str, report_id: num, title: str, body: str, rationale: str, source_refs: { type: "array" } }),
+    inputSchema: obj({ topic: str, title: str, body: str, rationale: str, source_refs: { type: "array" } }),
   },
   {
     name: "submit_lead",

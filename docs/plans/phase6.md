@@ -148,7 +148,7 @@ threads reconstruct; author profiles accumulate across runs.
 > **Storage split (implemented):** scraped/pre-processed **bulk** stays in the DB — `topics`,
 > `entities`, `mentions`, `post_topics`, `events`, `jobs`. Claude's **prose artifacts**
 > (`reports`, `insights`, `topic_dossiers`, `leads`) are NOT in the DB — they live as Markdown
-> files (JSON frontmatter + body) under `config.kb_dir` (`knowledge/`), written/read by
+> files (JSON frontmatter + body) under `config.kb_dir` (`.kb/`), written/read by
 > `api/kbstore.ts` and indexed/served via tooling. ids are filename-stable strings; insight
 > approval rewrites the file in place. This keeps Claude's knowledge human-readable, portable,
 > and git-friendly while the DB carries the firehose query workload.

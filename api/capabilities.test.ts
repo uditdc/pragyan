@@ -1,26 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
-import type { Insight, Report } from "../shared/kb.ts";
+import type { Insight } from "../shared/kb.ts";
 
 process.env.XFEED_DB_PATH = ":memory:";
 rmSync("/tmp/pragyan-caps-kb", { recursive: true, force: true });
 process.env.XFEED_KB_DIR = "/tmp/pragyan-caps-kb";
 const { runCapability } = await import("./capabilities.ts");
-
-test("submit_report persists and is readable via get_reports", async () => {
-  const report = (await runCapability("submit_report", {
-    topic: "ai",
-    title: "Capex supercycle",
-    body: "synthesis",
-    opinion: "watch power",
-    citations: [{ kind: "url", ref: "https://example.com", label: "Example" }],
-    model: "gpt-oss-120b",
-  })) as Report;
-  assert.ok(report.id);
-  const reports = (await runCapability("get_reports", { limit: 10 })) as Report[];
-  assert.ok(reports.some((r) => r.id === report.id && r.citations.length === 1));
-});
 
 test("submit_insight is pending and listed by get_insights", async () => {
   const insight = (await runCapability("submit_insight", {

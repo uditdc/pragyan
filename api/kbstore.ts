@@ -3,10 +3,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute } from "node:path";
 import { randomUUID } from "node:crypto";
 import { config } from "./config.ts";
-import type { Citation, Dossier, Insight, InsightStatus, Lead, Report } from "../shared/kb.ts";
+import type { Dossier, Insight, InsightStatus, Lead } from "../shared/kb.ts";
 
-// Filesystem-backed store for Claude's prose artifacts (reports, insights,
-// dossiers, leads). Each is a Markdown file with a JSON frontmatter header — human
+// Filesystem-backed store for Claude's prose artifacts (insights, dossiers,
+// leads). Each is a Markdown file with a JSON frontmatter header — human
 // readable, greppable, portable — and pragyan only indexes/serves them. The DB
 // holds the scraped/pre-processed bulk (posts, entities, events); this does not.
 
@@ -15,7 +15,6 @@ const configured = process.env.XFEED_KB_DIR ?? config.kb_dir;
 const root = isAbsolute(configured) ? configured : join(repoRoot, configured);
 
 const dirs = {
-  reports: join(root, "reports"),
   insights: join(root, "insights"),
   dossiers: join(root, "dossiers"),
   leads: join(root, "leads"),
@@ -60,57 +59,9 @@ function byCreatedDesc(a: { created_at: string }, b: { created_at: string }): nu
   return a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
 }
 
-// ── reports ──
-
-export interface NewReport {
-  created_at: string;
-  author: string;
-  topic: string | null;
-  title: string;
-  body: string;
-  opinion: string;
-  citations: Citation[];
-  model: string | null;
-}
-function recordToReport(meta: Record<string, unknown>, body: string): Report {
-  return {
-    id: String(meta.id),
-    created_at: String(meta.created_at),
-    author: String(meta.author ?? "claude"),
-    topic: (meta.topic as string) ?? null,
-    title: String(meta.title ?? ""),
-    body,
-    opinion: String(meta.opinion ?? ""),
-    citations: Array.isArray(meta.citations) ? (meta.citations as Citation[]) : [],
-    model: (meta.model as string) ?? null,
-  };
-}
-export function insertReport(r: NewReport): Report {
-  const id = genId();
-  const report: Report = { id, ...r };
-  const { body, ...meta } = report;
-  writeFileSync(join(dirs.reports, `${id}.md`), serialize(meta, body));
-  return report;
-}
-export function getReport(id: string): Report | null {
-  try {
-    const parsed = parse(readFileSync(join(dirs.reports, `${id}.md`), "utf8"));
-    return parsed ? recordToReport(parsed.meta, parsed.body) : null;
-  } catch {
-    return null;
-  }
-}
-export function listReports(limit: number): Report[] {
-  return readRecords(dirs.reports)
-    .map((r) => recordToReport(r.meta, r.body))
-    .sort(byCreatedDesc)
-    .slice(0, limit);
-}
-
 // ── insights ──
 
 export interface NewInsight {
-  report_id: string | null;
   topic: string | null;
   title: string;
   body: string;
@@ -121,7 +72,6 @@ export interface NewInsight {
 function recordToInsight(meta: Record<string, unknown>, body: string): Insight {
   return {
     id: String(meta.id),
-    report_id: (meta.report_id as string) ?? null,
     topic: (meta.topic as string) ?? null,
     status: (meta.status as InsightStatus) ?? "pending",
     title: String(meta.title ?? ""),
@@ -142,7 +92,6 @@ function writeInsight(i: Insight): void {
 export function insertInsight(i: NewInsight): Insight {
   const insight: Insight = {
     id: genId(),
-    report_id: i.report_id,
     topic: i.topic,
     status: "pending",
     title: i.title,

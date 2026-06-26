@@ -36,7 +36,7 @@ export function InsightsView({
     <Box flexDirection="column" width={width} height={height} paddingX={1} overflow="hidden">
       <Panel
         title="INSIGHTS"
-        meta={`${insights.length} · ${pending} pending · a approve · x reject`}
+        meta={`${insights.length} · ${pending} pending · ↵ read · a approve · x reject`}
         width={width - 2}
         flexGrow={1}
       >

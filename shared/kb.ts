@@ -1,6 +1,6 @@
 // Knowledge-base contracts shared by the API, the MCP server, and the TUI.
-// Reports/insights are Claude-authored; provenance (citations / source_refs) may
-// reference post ids OR external URLs (Claude's own web research).
+// Insights are Claude-authored; provenance (source_refs) may reference post ids
+// OR external URLs (Claude's own web research).
 
 export type InsightStatus = "pending" | "approved" | "rejected" | "acted";
 
@@ -27,30 +27,11 @@ export interface Entity {
   mention_count: number;
 }
 
-export interface Citation {
-  kind: "post" | "url";
-  ref: string;
-  label: string;
-}
-
 // Filesystem-backed (api/kbstore.ts): Claude's prose artifacts live as Markdown
 // files with a JSON frontmatter header, indexed by pragyan — never in the DB.
 // ids are filename-stable strings.
-export interface Report {
-  id: string;
-  created_at: string;
-  author: string;
-  topic: string | null;
-  title: string;
-  body: string;
-  opinion: string;
-  citations: Citation[];
-  model: string | null;
-}
-
 export interface Insight {
   id: string;
-  report_id: string | null;
   topic: string | null;
   status: InsightStatus;
   title: string;

@@ -23,7 +23,7 @@ import { startScorer } from "./scorer.ts";
 import { runCapability } from "./capabilities.ts";
 import { CAPABILITIES } from "./capabilitySchema.ts";
 import { recordEvent } from "./db.ts";
-import { listInsights, listReports, getInsight, setInsightStatus } from "./kbstore.ts";
+import { listInsights, getInsight, setInsightStatus } from "./kbstore.ts";
 import { action } from "./action.ts";
 import type { InsightStatus } from "../shared/kb.ts";
 
@@ -163,11 +163,6 @@ app.get("/insights", (req, res) => {
   const status = typeof req.query.status === "string" ? (req.query.status as InsightStatus) : null;
   const limit = Math.min(200, Number(req.query.limit ?? 100) || 100);
   res.json({ insights: listInsights(status, limit) });
-});
-
-app.get("/reports", (req, res) => {
-  const limit = Math.min(200, Number(req.query.limit ?? 50) || 50);
-  res.json({ reports: listReports(limit) });
 });
 
 app.post("/insights/:id/approve", (req, res) => {

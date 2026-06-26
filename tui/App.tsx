@@ -9,7 +9,6 @@ import {
   fetchSummaries,
   regenerateSummary,
   fetchInsights,
-  fetchReports,
   approveInsight,
   rejectInsight,
 } from "./api.ts";
@@ -34,8 +33,8 @@ import { UptimeView } from "./UptimeView.tsx";
 import { fetchUptime, recheckUptime } from "./uptime.ts";
 import type { UptimeSnapshot } from "../shared/uptime.ts";
 import { InsightsView } from "./InsightsView.tsx";
-import { ReportsView } from "./ReportsView.tsx";
-import type { Insight, Report } from "../shared/kb.ts";
+import { KbReader } from "./KbReader.tsx";
+import type { Insight } from "../shared/kb.ts";
 
 const THRESHOLDS = [0, 0.2, 0.4, 0.6];
 
@@ -84,8 +83,9 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const [summaryIdx, setSummaryIdx] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
   const [insights, setInsights] = useState<Insight[]>([]);
-  const [reports, setReports] = useState<Report[]>([]);
   const [insightIdx, setInsightIdx] = useState(0);
+  const [reader, setReader] = useState(false);
+  const [readerScroll, setReaderScroll] = useState(0);
 
   const seenRef = useRef<Set<string>>(new Set());
   const freshRef = useRef<Set<string>>(new Set());
@@ -160,29 +160,17 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     }
   }, [baseUrl]);
 
-  const loadReports = useCallback(async () => {
-    try {
-      setReports(await fetchReports(baseUrl));
-    } catch {
-      /* keep last */
-    }
-  }, [baseUrl]);
-
   useEffect(() => {
     void load();
     void loadMarkets();
     void loadUptime();
     void loadSummary();
     void loadInsights();
-    void loadReports();
     const poll = setInterval(() => void load(), pollMs);
     const marketPoll = setInterval(() => void loadMarkets(), 10_000);
     const uptimePoll = setInterval(() => void loadUptime(), 15_000);
     const summaryPoll = setInterval(() => void loadSummary(), 30_000);
-    const kbPoll = setInterval(() => {
-      void loadInsights();
-      void loadReports();
-    }, 20_000);
+    const kbPoll = setInterval(() => void loadInsights(), 20_000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
     const anim = config.matrix_rain ? setInterval(() => setFrame((f) => f + 1), 130) : null;
     return () => {
@@ -194,7 +182,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       clearInterval(clock);
       if (anim) clearInterval(anim);
     };
-  }, [load, loadMarkets, loadUptime, loadSummary, loadInsights, loadReports, pollMs]);
+  }, [load, loadMarkets, loadUptime, loadSummary, loadInsights, pollMs]);
 
   useEffect(() => {
     const flushViewed = () => {
@@ -226,11 +214,14 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const onDashboardTab = TABS[tabIdx] === "dashboard";
   const onUptimeTab = TABS[tabIdx] === "uptime";
   const onInsightsTab = TABS[tabIdx] === "insights";
-  const onReportsTab = TABS[tabIdx] === "reports";
 
   useEffect(() => {
     setInsightIdx((i) => Math.max(0, Math.min(i, insights.length - 1)));
   }, [insights.length]);
+
+  useEffect(() => {
+    setReader(false);
+  }, [tabIdx]);
 
   const downServices = useMemo(
     () => (uptime?.monitors ?? []).filter((m) => m.state === "down").map((m) => m.name),
@@ -281,6 +272,15 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         exit();
         return;
       }
+      if (reader) {
+        if (key.escape || input === "q") setReader(false);
+        else if (input === "j" || key.downArrow) setReaderScroll((s) => s + 1);
+        else if (input === "k" || key.upArrow) setReaderScroll((s) => Math.max(0, s - 1));
+        else if (key.pageDown || input === " ") setReaderScroll((s) => s + 10);
+        else if (key.pageUp) setReaderScroll((s) => Math.max(0, s - 10));
+        else if (input === "g") setReaderScroll(0);
+        return;
+      }
       if (key.tab) {
         const len = TABS.length;
         setTabIdx((i) => (key.shift ? (i + len - 1) % len : (i + 1) % len));
@@ -306,8 +306,6 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           void recheckUptime(baseUrl).then(setUptime).catch(() => {});
         } else if (onInsightsTab) {
           void loadInsights();
-        } else if (onReportsTab) {
-          void loadReports();
         } else {
           void load();
           void loadMarkets();
@@ -329,10 +327,14 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           if (ins && ins.status === "pending") {
             void rejectInsight(baseUrl, ins.id).then(loadInsights).catch(() => {});
           }
+        } else if (key.return || input === "o") {
+          if (insights[insightIdx]) {
+            setReaderScroll(0);
+            setReader(true);
+          }
         }
         return;
       }
-      if (onReportsTab) return;
       if (onDashboardTab) {
         if (input === "h" || key.leftArrow) {
           setSummaryIdx((i) => Math.min(summaries.length - 1, i + 1));
@@ -452,6 +454,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
           total={summaries.length}
           markets={markets}
           uptime={uptime}
+          insights={insights}
           regenerating={regenerating}
           width={columns}
           height={bodyRows}
@@ -460,14 +463,26 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       ) : onUptimeTab ? (
         <UptimeView snapshot={uptime} width={columns} height={bodyRows} now={now} />
       ) : onInsightsTab ? (
-        <InsightsView
-          insights={insights}
-          selectedIdx={Math.min(insightIdx, Math.max(0, insights.length - 1))}
-          width={columns}
-          height={bodyRows}
-        />
-      ) : onReportsTab ? (
-        <ReportsView reports={reports} width={columns} height={bodyRows} />
+        reader && insights[insightIdx] ? (
+          <KbReader
+            kind="INSIGHT"
+            meta={`${insights[insightIdx].status} · ${insights[insightIdx].source_refs.length} source(s)`}
+            headline={insights[insightIdx].title}
+            lead={insights[insightIdx].rationale ? `why: ${insights[insightIdx].rationale}` : undefined}
+            body={insights[insightIdx].body}
+            provenance={insights[insightIdx].source_refs}
+            scroll={readerScroll}
+            width={columns}
+            height={bodyRows}
+          />
+        ) : (
+          <InsightsView
+            insights={insights}
+            selectedIdx={Math.min(insightIdx, Math.max(0, insights.length - 1))}
+            width={columns}
+            height={bodyRows}
+          />
+        )
       ) : (
         <MarketView markets={markets} width={columns} height={bodyRows} now={now} />
       )}

@@ -4,7 +4,7 @@ import type {
   SummaryRecord,
   SummaryResponse,
 } from "../shared/summary.ts";
-import type { Insight, Report } from "../shared/kb.ts";
+import type { Insight } from "../shared/kb.ts";
 
 export interface FeedResponse {
   posts: Post[];
@@ -84,12 +84,6 @@ export async function fetchInsights(baseUrl: string): Promise<Insight[]> {
   const res = await fetch(`${baseUrl}/insights`, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) throw new Error(`insights ${res.status}`);
   return ((await res.json()) as { insights: Insight[] }).insights;
-}
-
-export async function fetchReports(baseUrl: string): Promise<Report[]> {
-  const res = await fetch(`${baseUrl}/reports`, { signal: AbortSignal.timeout(5000) });
-  if (!res.ok) throw new Error(`reports ${res.status}`);
-  return ((await res.json()) as { reports: Report[] }).reports;
 }
 
 export async function approveInsight(baseUrl: string, id: string): Promise<void> {

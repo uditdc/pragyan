@@ -1,7 +1,7 @@
 import { runTool } from "./tools.ts";
 import { getSnapshot } from "./markets.ts";
 import { harvestNewsQuery } from "./news.ts";
-import type { Citation, InsightStatus } from "../shared/kb.ts";
+import type { InsightStatus } from "../shared/kb.ts";
 import {
   createJob,
   finishJob,
@@ -16,9 +16,7 @@ import {
   getDossier,
   insertInsight,
   insertLead,
-  insertReport,
   listInsights,
-  listReports,
   upsertDossier,
 } from "./kbstore.ts";
 
@@ -91,8 +89,6 @@ export async function runCapability(name: string, args: Record<string, unknown>)
       const topic = topicOf(args.topic);
       return topic ? { topic, dossier: getDossier(topic) } : null;
     }
-    case "get_reports":
-      return listReports(clampNum(args.limit, 10, 50));
     case "get_insights":
       return listInsights(
         typeof args.status === "string" ? (args.status as InsightStatus) : null,
@@ -109,20 +105,8 @@ export async function runCapability(name: string, args: Record<string, unknown>)
       void runHarvestJob(job.id, args);
       return { job_id: job.id, status: job.status };
     }
-    case "submit_report":
-      return insertReport({
-        created_at: now,
-        author: "claude",
-        topic: topicOf(args.topic),
-        title: str(args.title),
-        body: str(args.body),
-        opinion: str(args.opinion),
-        citations: Array.isArray(args.citations) ? (args.citations as Citation[]) : [],
-        model: typeof args.model === "string" ? args.model : null,
-      });
     case "submit_insight":
       return insertInsight({
-        report_id: args.report_id != null ? String(args.report_id) : null,
         topic: topicOf(args.topic),
         title: str(args.title),
         body: str(args.body),
