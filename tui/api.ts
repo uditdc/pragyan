@@ -4,6 +4,7 @@ import type {
   SummaryRecord,
   SummaryResponse,
 } from "../shared/summary.ts";
+import type { Insight } from "../shared/kb.ts";
 
 export interface FeedResponse {
   posts: Post[];
@@ -77,4 +78,18 @@ export async function regenerateSummary(baseUrl: string): Promise<SummaryRecord 
   });
   if (!res.ok) throw new Error(`regenerate ${res.status}`);
   return (await res.json()) as SummaryRecord | null;
+}
+
+export async function fetchInsights(baseUrl: string): Promise<Insight[]> {
+  const res = await fetch(`${baseUrl}/insights`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`insights ${res.status}`);
+  return ((await res.json()) as { insights: Insight[] }).insights;
+}
+
+export async function approveInsight(baseUrl: string, id: string): Promise<void> {
+  await fetch(`${baseUrl}/insights/${id}/approve`, { method: "POST", signal: AbortSignal.timeout(5000) });
+}
+
+export async function rejectInsight(baseUrl: string, id: string): Promise<void> {
+  await fetch(`${baseUrl}/insights/${id}/reject`, { method: "POST", signal: AbortSignal.timeout(5000) });
 }

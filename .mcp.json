@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "pragyan": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["tsx", "api/mcp.ts"],
+      "env": { "XFEED_API_BASE": "http://127.0.0.1:8787" }
+    }
+  }
+}

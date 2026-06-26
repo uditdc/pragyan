@@ -64,9 +64,10 @@ npm run tui
 
 ## TUI keys
 
-`1-4`/`Tab` switch tabs (feed · crypto · nifty · polymarket) · `j/k`+arrows move ·
-`g/G` top/bottom · `enter`/`o` open link · `x` dismiss · `u` undo dismiss ·
-`t` cycle threshold · `n` toggle news-only · `space` pause · `r` refresh · `q` quit.
+`1-6`/`Tab` switch tabs (dashboard · feed · markets · uptime · insights · reports) ·
+`j/k`+arrows move · `g/G` top/bottom · `enter`/`o` open link · `x` dismiss · `u` undo ·
+`t` threshold · `n` news-only · `space` pause · `r` refresh · on **insights** `a` approve /
+`x` reject · `q` quit.
 
 ## Configuration
 
@@ -83,9 +84,11 @@ TTLs, and market sources. Re-tuning the feed never touches code. Harvest behavio
 
 Posts go through a two-stage rank: a synchronous heuristic pre-filter at ingest
 (flags ads, pure replies, low-engagement and clickbait — flagged rows are kept,
-not deleted), then scoring of the survivors. The current scorer is a heuristic
-stand-in (`api/dummyScorer.ts`); replacing it with a batched async LLM job is
-planned — see [`docs/plans/phase5.md`](docs/plans/phase5.md).
+not deleted), then a background **LLM scorer** (`api/scorer.ts`) drains the
+`scored_at IS NULL` queue for topic-aware relevance, falling back to the heuristic
+(`api/dummyScorer.ts`) whenever the shared Cerebras budget is exhausted. The broader
+two-tier design — Claude as an external brain reaching pragyan over an MCP server —
+lives in [`docs/plans/phase6.md`](docs/plans/phase6.md).
 
 ## Tests
 

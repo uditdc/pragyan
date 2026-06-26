@@ -4,7 +4,7 @@ export type MediaType = "photo" | "video" | "gif" | "card";
 
 export type FeedSort = "score" | "recent";
 
-export type PostSource = "x" | "google_news";
+export type PostSource = "x" | "google_news" | "linkedin" | "reddit";
 
 export interface Metrics {
   replies: number;
@@ -80,7 +80,30 @@ export type HarvestedPost = Pick<
   | "media_types"
   | "metrics"
   | "harvested_at"
->;
+> & { feed_position?: number };
+
+export interface MetricSnapshot {
+  observed_at: string;
+  replies: number;
+  reposts: number;
+  likes: number;
+  views: number;
+  engagement: number;
+}
+
+export interface AuthorProfile {
+  handle: string;
+  name: string;
+  source: PostSource;
+  first_seen: string;
+  last_seen: string;
+  post_count: number;
+  kept_count: number;
+}
+
+export function engagementOf(metrics: Metrics): number {
+  return metrics.likes + metrics.reposts;
+}
 
 export interface IngestResult {
   received: number;

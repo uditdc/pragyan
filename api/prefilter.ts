@@ -1,4 +1,5 @@
 import type { DropReason, HarvestedPost } from "../shared/post.ts";
+import { engagementOf } from "../shared/post.ts";
 import { config } from "./config.ts";
 
 export interface PrefilterVerdict {
@@ -46,7 +47,7 @@ export function prefilter(post: HarvestedPost): PrefilterVerdict {
   if (post.is_ad) return drop("ad");
   if (post.is_reply && config.prefilter.drop_replies) return drop("pure_reply");
 
-  const engagement = post.metrics.likes + post.metrics.reposts;
+  const engagement = engagementOf(post.metrics);
   if (engagement < config.prefilter.engagement_floor) {
     return drop("below_engagement_floor");
   }

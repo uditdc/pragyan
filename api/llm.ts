@@ -2,7 +2,14 @@ import OpenAI from "openai";
 import { config } from "./config.ts";
 
 function makeClient(baseURL?: string, apiKey?: string): OpenAI | null {
-  return baseURL && apiKey ? new OpenAI({ baseURL, apiKey }) : null;
+  return baseURL && apiKey
+    ? new OpenAI({
+        baseURL,
+        apiKey,
+        timeout: config.llm.timeout_ms,
+        maxRetries: config.llm.max_retries,
+      })
+    : null;
 }
 
 // Summary digest (and, later, ranking) — the default LLM.

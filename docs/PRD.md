@@ -9,6 +9,40 @@ The backend runs locally and never leaves the user's machine.
 
 ---
 
+## 0. Phase 6 status — current architecture (authoritative)
+
+> The sections below predate Phase 6 and describe some things that were planned but
+> built differently. This section is the current source of truth; see
+> [`plans/phase6.md`](plans/phase6.md) for the full design.
+
+pragyan is now a **two-tier knowledge engine**:
+
+- **Claude = external brain.** The user's Claude subscription (via Claude Code `/loop`
+  or a routine) runs the agentic loop. It reaches pragyan through an **MCP server**
+  (`api/mcp.ts`, a thin stdio client over the REST API — `.mcp.json` registers it),
+  pulling context and **submitting reports/insights** that pragyan stores. Reports and
+  insights carry provenance (post ids **or** external URLs). Insights wait for a
+  **single human approval** (TUI insights tab → `POST /insights/:id/approve`), then a
+  notify-only `action()` runs (fails closed on ungrounded insights).
+- **pragyan = eyes, ears, hands & memory.** It harvests (X + Google News), records a
+  **longitudinal record** (`post_metrics` velocity, `post_seen`, `authors`), keeps
+  **structured memory** (`topics`, `entities`/`mentions`, `topic_dossiers`, `reports`,
+  `insights`, `leads`, `events`; `user_version` migrations), and exposes a **capability
+  registry** (`api/capabilitySchema.ts`) that drives both REST (`/tools/:name`) and MCP.
+  The "hands" (`request_harvest`) run as async jobs that work between loops.
+- **Cerebras `gpt-oss-120b` is the cheap triage tier only** — relevance **scoring**
+  (`api/scorer.ts`, now built; ingest enqueues `scored_at: null`, heuristic fallback) and
+  the rolling **digest**. Both share one rate/token budget (`api/budget.ts`): free-plan
+  caps **5 req/min · 150/hr · 2,400/day; 1M tokens/day**. Model/base/key are
+  OpenAI-compatible via `XFEED_LLM_*` — **not** Claude/Haiku. There is **no internal
+  Cerebras agent**; the loop is Claude's.
+
+Known deferrals: reliable `thread_id` capture and additional sources (LinkedIn/Reddit)
+are gated on the X loop being proven (phase6 Steps 2/7); full-text search uses `LIKE`
+(FTS5 is a future optimization — adequate at the current corpus size).
+
+---
+
 ## 1. Architecture
 
 ```

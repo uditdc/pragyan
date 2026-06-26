@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { XMLParser } from "fast-xml-parser";
-import type { HarvestedPost, Scores } from "../shared/post.ts";
+import type { HarvestedPost } from "../shared/post.ts";
 import { config } from "./config.ts";
 import { clickbaitScore } from "./prefilter.ts";
 import { postExists, upsertPost } from "./db.ts";
@@ -92,19 +92,6 @@ async function fetchTopic(topic: string, now: string): Promise<HarvestedPost[]> 
     .filter((p): p is HarvestedPost => p !== null);
 }
 
-// Headlines carry no engagement, so they bypass the prefilter's engagement
-// floor and get fixed mid-pack scores; is_news=true is what makes the TUI and
-// summaries treat them as news.
-function newsScores(text: string): Scores {
-  return {
-    relevance: 0.6,
-    importance: 0.55,
-    clickbait: clickbaitScore(text),
-    is_news: true,
-    news_confidence: 0.9,
-  };
-}
-
 async function refresh(): Promise<void> {
   const now = new Date().toISOString();
   const settled = await Promise.allSettled(
@@ -117,17 +104,44 @@ async function refresh(): Promise<void> {
     for (const post of result.value) {
       if (seen.has(post.id) || postExists(post.id)) continue;
       seen.add(post.id);
-      const scores = newsScores(post.text);
+      // Headlines enter the scoring queue (scored_at: null) so the scorer gives
+      // them real topic-aware relevance instead of fixed mid-pack constants.
       upsertPost({
         post,
         kept: true,
         drop_reason: null,
-        clickbait_heuristic: scores.clickbait,
-        scores,
-        scored_at: now,
+        clickbait_heuristic: clickbaitScore(post.text),
+        scores: null,
+        scored_at: null,
       });
     }
   }
+}
+
+// Targeted one-off harvest for the agent's request_harvest "hands" (v1): runs a
+// Google News search for an arbitrary query and enqueues the results for scoring.
+export async function harvestNewsQuery(query: string): Promise<number> {
+  const now = new Date().toISOString();
+  let posts: HarvestedPost[];
+  try {
+    posts = await fetchTopic(query, now);
+  } catch {
+    return 0;
+  }
+  let n = 0;
+  for (const post of posts) {
+    if (postExists(post.id)) continue;
+    upsertPost({
+      post,
+      kept: true,
+      drop_reason: null,
+      clickbait_heuristic: clickbaitScore(post.text),
+      scores: null,
+      scored_at: null,
+    });
+    n++;
+  }
+  return n;
 }
 
 export function startNews(): void {

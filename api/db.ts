@@ -2,23 +2,29 @@ import Database from "better-sqlite3";
 import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute } from "node:path";
 import type {
+  AuthorProfile,
   FeedSort,
   HarvestedPost,
   MediaType,
+  MetricSnapshot,
   Post,
   Scores,
 } from "../shared/post.ts";
-import { SCHEMA_VERSION } from "../shared/post.ts";
+import { engagementOf, SCHEMA_VERSION } from "../shared/post.ts";
 import type { Digest, SummaryRecord, SummaryStatus } from "../shared/summary.ts";
+import type { Entity, EventKind, Topic } from "../shared/kb.ts";
 import { config } from "./config.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const dbPath = isAbsolute(config.server.db_path)
-  ? config.server.db_path
-  : join(repoRoot, config.server.db_path);
+const configuredPath = process.env.XFEED_DB_PATH ?? config.server.db_path;
+const dbPath =
+  configuredPath === ":memory:" || isAbsolute(configuredPath)
+    ? configuredPath
+    : join(repoRoot, configuredPath);
 
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
+db.pragma("busy_timeout = 5000");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS posts (
@@ -57,6 +63,7 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_posts_harvested ON posts(harvested_at);
   CREATE INDEX IF NOT EXISTS idx_posts_scoring ON posts(kept, scored_at);
+  CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at);
 
   CREATE TABLE IF NOT EXISTS summaries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +78,35 @@ db.exec(`
     digest TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_summaries_generated ON summaries(generated_at);
+
+  CREATE TABLE IF NOT EXISTS post_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    replies INTEGER NOT NULL,
+    reposts INTEGER NOT NULL,
+    likes INTEGER NOT NULL,
+    views INTEGER NOT NULL,
+    engagement INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_post_metrics ON post_metrics(post_id, observed_at);
+
+  CREATE TABLE IF NOT EXISTS post_seen (
+    post_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    feed_position INTEGER,
+    PRIMARY KEY (post_id, observed_at)
+  );
+
+  CREATE TABLE IF NOT EXISTS authors (
+    handle TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    post_count INTEGER NOT NULL DEFAULT 0,
+    kept_count INTEGER NOT NULL DEFAULT 0
+  );
 `);
 
 const existingColumns = new Set(
@@ -89,6 +125,72 @@ for (const [name, type] of [
 db.exec(
   "CREATE INDEX IF NOT EXISTS idx_posts_lifecycle ON posts(expired_at, viewed_at, harvested_at)",
 );
+
+// Ordered, idempotent schema migrations gated by PRAGMA user_version. The legacy
+// posts/summaries/post_metrics/post_seen/authors tables above are the v0 baseline;
+// each migration below bumps the version once.
+const migrations: Array<() => void> = [
+  () =>
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS topics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label TEXT UNIQUE NOT NULL,
+        priority REAL NOT NULL DEFAULT 0,
+        relevance REAL NOT NULL DEFAULT 0,
+        last_ranked_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS entities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        aliases TEXT NOT NULL DEFAULT '[]',
+        first_seen TEXT NOT NULL,
+        last_seen TEXT NOT NULL,
+        mention_count INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(kind, name)
+      );
+      CREATE TABLE IF NOT EXISTS mentions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_id INTEGER NOT NULL,
+        post_id TEXT,
+        report_id INTEGER,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_mentions_entity ON mentions(entity_id, created_at);
+      CREATE TABLE IF NOT EXISTS post_topics (
+        post_id TEXT NOT NULL,
+        topic_id INTEGER NOT NULL,
+        PRIMARY KEY (post_id, topic_id)
+      );
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        post_id TEXT,
+        topic_id INTEGER,
+        insight_id INTEGER,
+        entity_id INTEGER,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+    `),
+  () =>
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        params TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        result TEXT,
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+      );
+    `),
+];
+
+let userVersion = db.pragma("user_version", { simple: true }) as number;
+for (; userVersion < migrations.length; userVersion++) migrations[userVersion]();
+db.pragma(`user_version = ${migrations.length}`);
 
 interface Row {
   id: string;
@@ -250,6 +352,152 @@ export function upsertPost(s: StoredPost): void {
   });
 }
 
+const unscoredStmt = db.prepare<[number], Row>(
+  "SELECT * FROM posts WHERE kept = 1 AND scored_at IS NULL ORDER BY harvested_at DESC LIMIT ?",
+);
+
+export function getUnscoredPosts(limit: number): Post[] {
+  return unscoredStmt.all(limit).map(rowToPost);
+}
+
+const updateScoresStmt = db.prepare(`
+  UPDATE posts SET
+    s_relevance = @s_relevance,
+    s_importance = @s_importance,
+    s_clickbait = @s_clickbait,
+    s_is_news = @s_is_news,
+    s_news_confidence = @s_news_confidence,
+    scored_at = @scored_at
+  WHERE id = @id AND scored_at IS NULL
+`);
+
+export interface ScoreUpdate {
+  id: string;
+  scores: Scores;
+  scored_at: string;
+}
+
+const updateScoresTx = db.transaction((updates: ScoreUpdate[]) => {
+  for (const u of updates) {
+    updateScoresStmt.run({
+      id: u.id,
+      s_relevance: u.scores.relevance,
+      s_importance: u.scores.importance,
+      s_clickbait: u.scores.clickbait,
+      s_is_news: u.scores.is_news ? 1 : 0,
+      s_news_confidence: u.scores.news_confidence,
+      scored_at: u.scored_at,
+    });
+  }
+});
+
+export function updatePostScores(updates: ScoreUpdate[]): void {
+  updateScoresTx(updates);
+}
+
+const latestMetricStmt = db.prepare<
+  [string],
+  { replies: number; reposts: number; likes: number; views: number }
+>(
+  "SELECT replies, reposts, likes, views FROM post_metrics WHERE post_id = ? ORDER BY observed_at DESC, id DESC LIMIT 1",
+);
+
+const insertMetricStmt = db.prepare(`
+  INSERT INTO post_metrics (post_id, observed_at, replies, reposts, likes, views, engagement)
+  VALUES (@post_id, @observed_at, @replies, @reposts, @likes, @views, @engagement)
+`);
+
+const insertSeenStmt = db.prepare(
+  "INSERT OR IGNORE INTO post_seen (post_id, observed_at, feed_position) VALUES (@post_id, @observed_at, @feed_position)",
+);
+
+const upsertAuthorStmt = db.prepare(`
+  INSERT INTO authors (handle, name, source, first_seen, last_seen, post_count, kept_count)
+  VALUES (@handle, @name, @source, @now, @now, 1, @kept)
+  ON CONFLICT(handle) DO UPDATE SET
+    name = excluded.name,
+    last_seen = excluded.last_seen,
+    post_count = post_count + 1,
+    kept_count = kept_count + @kept
+`);
+
+export interface Observation {
+  post: HarvestedPost;
+  kept: boolean;
+  observed_at: string;
+  feed_position: number | null;
+}
+
+const recordObservationTx = db.transaction((o: Observation) => {
+  const m = o.post.metrics;
+  const last = latestMetricStmt.get(o.post.id);
+  const changed =
+    !last ||
+    last.replies !== m.replies ||
+    last.reposts !== m.reposts ||
+    last.likes !== m.likes ||
+    last.views !== m.views;
+  if (changed) {
+    insertMetricStmt.run({
+      post_id: o.post.id,
+      observed_at: o.observed_at,
+      replies: m.replies,
+      reposts: m.reposts,
+      likes: m.likes,
+      views: m.views,
+      engagement: engagementOf(m),
+    });
+  }
+  insertSeenStmt.run({
+    post_id: o.post.id,
+    observed_at: o.observed_at,
+    feed_position: o.feed_position,
+  });
+  upsertAuthorStmt.run({
+    handle: o.post.author_handle,
+    name: o.post.author_name,
+    source: o.post.source,
+    now: o.observed_at,
+    kept: o.kept ? 1 : 0,
+  });
+});
+
+export function recordObservation(o: Observation): void {
+  recordObservationTx(o);
+}
+
+const metricsHistStmt = db.prepare<[string], MetricSnapshot>(
+  "SELECT observed_at, replies, reposts, likes, views, engagement FROM post_metrics WHERE post_id = ? ORDER BY observed_at ASC, id ASC",
+);
+
+export function getPostMetricsHistory(postId: string): MetricSnapshot[] {
+  return metricsHistStmt.all(postId);
+}
+
+export function getPostVelocity(postId: string): number | null {
+  const h = metricsHistStmt.all(postId);
+  if (h.length < 2) return null;
+  const first = h[0];
+  const last = h[h.length - 1];
+  const hours = (Date.parse(last.observed_at) - Date.parse(first.observed_at)) / 3_600_000;
+  if (hours <= 0) return null;
+  return (last.engagement - first.engagement) / hours;
+}
+
+const seenStmt = db.prepare<[string], { observed_at: string; feed_position: number | null }>(
+  "SELECT observed_at, feed_position FROM post_seen WHERE post_id = ? ORDER BY observed_at ASC",
+);
+
+export function getPostSeen(postId: string): { observed_at: string; feed_position: number | null }[] {
+  return seenStmt.all(postId);
+}
+
+const authorStmt = db.prepare<[string], AuthorProfile>("SELECT * FROM authors WHERE handle = ?");
+
+export function getAuthor(handle: string): AuthorProfile | null {
+  return authorStmt.get(handle) ?? null;
+}
+
 const markViewedStmt = db.prepare(
   "UPDATE posts SET viewed_at = @now WHERE id = @id AND viewed_at IS NULL",
 );
@@ -274,7 +522,9 @@ export function markViewed(ids: string[], now: string): number {
 }
 
 export function dismiss(ids: string[], now: string): number {
-  return runOverIds(dismissStmt, ids, { now });
+  const changed = runOverIds(dismissStmt, ids, { now });
+  for (const id of ids) recordEvent("dismiss", { post_id: id }, now);
+  return changed;
 }
 
 export function undismiss(ids: string[]): number {
@@ -296,13 +546,22 @@ export interface FeedResult {
   next_since: string | null;
 }
 
-export function queryFeed(q: FeedQuery): FeedResult {
+// Mild recency decay applied only to score-sorted ordering (not to the min_score
+// gate, so thresholds keep their meaning): a post ~3 days old ranks at ~half.
+const RECENCY_DECAY_SQL =
+  "(1.0 / (1.0 + ((julianday('now') - julianday(created_at)) * 24.0) / 72.0))";
+
+function compositeScoreSql(): string {
   const { weights } = config;
-  const composite = `(
+  return `(
     COALESCE(s_importance, 0) * ${weights.importance}
     + COALESCE(s_relevance, 0) * ${weights.relevance}
     - COALESCE(s_clickbait, 0) * ${weights.clickbait}
   )`;
+}
+
+export function queryFeed(q: FeedQuery): FeedResult {
+  const composite = compositeScoreSql();
 
   const where: string[] = [];
   const params: Record<string, unknown> = { limit: q.limit };
@@ -323,7 +582,10 @@ export function queryFeed(q: FeedQuery): FeedResult {
       Date.now() - config.feed.max_age_hours * 3_600_000,
     ).toISOString();
   }
-  if (q.news_only) where.push("s_is_news = 1");
+  if (q.news_only) {
+    where.push("s_is_news = 1");
+    where.push(`COALESCE(s_news_confidence, 0) >= ${config.gates.min_news_confidence}`);
+  }
   if (q.since !== null) {
     where.push("harvested_at > @since");
     params.since = q.since;
@@ -338,7 +600,7 @@ export function queryFeed(q: FeedQuery): FeedResult {
   const orderSql =
     q.sort === "recent"
       ? "created_at DESC, harvested_at DESC"
-      : `scored_at IS NULL, ${composite} DESC, harvested_at DESC`;
+      : `scored_at IS NULL, ${composite} * ${RECENCY_DECAY_SQL} DESC, harvested_at DESC`;
   const rows = db
     .prepare<Record<string, unknown>, Row>(
       `SELECT * FROM posts ${whereSql}
@@ -371,12 +633,7 @@ export interface PostSearchQuery {
 }
 
 export function searchPosts(q: PostSearchQuery): Post[] {
-  const { weights } = config;
-  const composite = `(
-    COALESCE(s_importance, 0) * ${weights.importance}
-    + COALESCE(s_relevance, 0) * ${weights.relevance}
-    - COALESCE(s_clickbait, 0) * ${weights.clickbait}
-  )`;
+  const composite = compositeScoreSql();
 
   const where: string[] = ["kept = 1"];
   const params: Record<string, unknown> = { limit: q.limit };
@@ -390,7 +647,10 @@ export function searchPosts(q: PostSearchQuery): Post[] {
     params.unviewed_cutoff = new Date(nowMs - unviewed_ttl_hours * 3_600_000).toISOString();
     params.viewed_cutoff = new Date(nowMs - viewed_ttl_min * 60_000).toISOString();
   }
-  if (q.news_only) where.push("s_is_news = 1");
+  if (q.news_only) {
+    where.push("s_is_news = 1");
+    where.push(`COALESCE(s_news_confidence, 0) >= ${config.gates.min_news_confidence}`);
+  }
   if (q.since !== null) {
     where.push("harvested_at > @since");
     params.since = q.since;
@@ -549,3 +809,263 @@ const pruneSummariesStmt = db.prepare(
 export function pruneSummaries(keep: number): number {
   return pruneSummariesStmt.run({ keep }).changes;
 }
+
+// ── Knowledge base (topics, entities, reports, insights, leads, events) ──
+
+const seedTopicStmt = db.prepare("INSERT OR IGNORE INTO topics (label, created_at) VALUES (?, ?)");
+
+export function seedTopics(labels: string[]): void {
+  const now = new Date().toISOString();
+  const tx = db.transaction((ls: string[]) => {
+    for (const l of ls) seedTopicStmt.run(l, now);
+  });
+  tx(labels);
+}
+
+const topicsStmt = db.prepare<[], Topic>("SELECT * FROM topics ORDER BY priority DESC, label ASC");
+export function listTopics(): Topic[] {
+  return topicsStmt.all();
+}
+
+const topicByLabelStmt = db.prepare<[string], Topic>("SELECT * FROM topics WHERE label = ?");
+export function getTopicByLabel(label: string): Topic | null {
+  return topicByLabelStmt.get(label) ?? null;
+}
+
+const setTopicRankStmt = db.prepare(
+  "UPDATE topics SET priority = @priority, relevance = @relevance, last_ranked_at = @now WHERE id = @id",
+);
+export function setTopicRanking(id: number, priority: number, relevance: number, now: string): void {
+  setTopicRankStmt.run({ id, priority, relevance, now });
+}
+
+const entityUpsertStmt = db.prepare(`
+  INSERT INTO entities (kind, name, aliases, first_seen, last_seen, mention_count)
+  VALUES (@kind, @name, '[]', @now, @now, 1)
+  ON CONFLICT(kind, name) DO UPDATE SET last_seen = @now, mention_count = mention_count + 1
+`);
+const entityIdStmt = db.prepare<[string, string], { id: number }>(
+  "SELECT id FROM entities WHERE kind = ? AND name = ?",
+);
+const insertMentionStmt = db.prepare(
+  "INSERT INTO mentions (entity_id, post_id, report_id, created_at) VALUES (@entity_id, @post_id, @report_id, @created_at)",
+);
+
+const recordMentionTx = db.transaction(
+  (kind: string, name: string, ref: { post_id?: string; report_id?: number }, now: string) => {
+    entityUpsertStmt.run({ kind, name, now });
+    const row = entityIdStmt.get(kind, name)!;
+    insertMentionStmt.run({
+      entity_id: row.id,
+      post_id: ref.post_id ?? null,
+      report_id: ref.report_id ?? null,
+      created_at: now,
+    });
+    return row.id;
+  },
+);
+
+export function recordEntityMention(
+  kind: string,
+  name: string,
+  ref: { post_id?: string; report_id?: number },
+  now: string,
+): number {
+  return recordMentionTx(kind, name, ref, now);
+}
+
+interface EntityRow {
+  id: number;
+  kind: string;
+  name: string;
+  aliases: string;
+  first_seen: string;
+  last_seen: string;
+  mention_count: number;
+}
+function rowToEntity(r: EntityRow): Entity {
+  return { ...r, aliases: JSON.parse(r.aliases) as string[] };
+}
+const entitiesStmt = db.prepare<[number], EntityRow>(
+  "SELECT * FROM entities ORDER BY mention_count DESC, last_seen DESC LIMIT ?",
+);
+export function listEntities(limit: number): Entity[] {
+  return entitiesStmt.all(limit).map(rowToEntity);
+}
+
+const linkPostTopicStmt = db.prepare(
+  "INSERT OR IGNORE INTO post_topics (post_id, topic_id) VALUES (?, ?)",
+);
+export function linkPostTopic(postId: string, topicId: number): void {
+  linkPostTopicStmt.run(postId, topicId);
+}
+
+export interface EventRef {
+  post_id?: string | null;
+  topic_id?: number | null;
+  insight_id?: string | number | null;
+  entity_id?: number | null;
+}
+const insertEventStmt = db.prepare(`
+  INSERT INTO events (kind, post_id, topic_id, insight_id, entity_id, created_at)
+  VALUES (@kind, @post_id, @topic_id, @insight_id, @entity_id, @created_at)
+`);
+export function recordEvent(kind: EventKind, ref: EventRef, now: string): void {
+  insertEventStmt.run({
+    kind,
+    post_id: ref.post_id ?? null,
+    topic_id: ref.topic_id ?? null,
+    insight_id: ref.insight_id ?? null,
+    entity_id: ref.entity_id ?? null,
+    created_at: now,
+  });
+}
+
+interface EventRow {
+  kind: string;
+  post_id: string | null;
+  topic_id: number | null;
+  insight_id: string | number | null;
+  entity_id: number | null;
+  created_at: string;
+}
+const eventsSinceStmt = db.prepare<[string, number], EventRow>(
+  "SELECT kind, post_id, topic_id, insight_id, entity_id, created_at FROM events WHERE created_at > ? ORDER BY created_at ASC LIMIT ?",
+);
+export function getEventsSince(since: string, limit: number): EventRow[] {
+  return eventsSinceStmt.all(since, limit);
+}
+
+const postByIdStmt = db.prepare<[string], Row>("SELECT * FROM posts WHERE id = ?");
+export function getPostById(id: string): Post | null {
+  const row = postByIdStmt.get(id);
+  return row ? rowToPost(row) : null;
+}
+
+// Ranks the configured topics by recent scored-post volume weighted by relevance,
+// persists the ranking, and returns it (drives the agent's get_top_topics tool).
+const topicVolStmt = db.prepare<{ label: string; cutoff: string }, { n: number; rel: number | null }>(
+  `SELECT COUNT(*) AS n, AVG(s_relevance) AS rel FROM posts
+   WHERE kept = 1 AND scored_at IS NOT NULL AND harvested_at > @cutoff AND text LIKE @label`,
+);
+export function getTopTopics(limit: number): Array<Topic & { volume: number; avg_relevance: number }> {
+  const cutoff = new Date(Date.now() - 48 * 3_600_000).toISOString();
+  const now = new Date().toISOString();
+  const ranked = listTopics()
+    .map((t) => {
+      const row = topicVolStmt.get({ label: `%${t.label}%`, cutoff });
+      const volume = row?.n ?? 0;
+      const avg = row?.rel ?? 0;
+      const priority = volume * (0.5 + avg);
+      return { ...t, volume, avg_relevance: avg, priority };
+    })
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, limit);
+  for (const t of ranked) setTopicRanking(t.id, t.priority, t.avg_relevance, now);
+  return ranked;
+}
+
+// Posts gaining engagement fastest — the "what's moving" signal only an always-on
+// sensor can produce. Candidates are posts with >=2 metric snapshots in the window.
+const trendingCandidatesStmt = db.prepare<[string], { post_id: string }>(
+  "SELECT post_id FROM post_metrics WHERE observed_at > ? GROUP BY post_id HAVING COUNT(*) >= 2",
+);
+export function getTrending(limit: number): Array<{ post: Post; velocity: number }> {
+  const cutoff = new Date(Date.now() - 24 * 3_600_000).toISOString();
+  const out: Array<{ post: Post; velocity: number }> = [];
+  for (const { post_id } of trendingCandidatesStmt.all(cutoff)) {
+    const velocity = getPostVelocity(post_id);
+    if (velocity === null) continue;
+    const post = getPostById(post_id);
+    if (post) out.push({ post, velocity });
+  }
+  out.sort((a, b) => b.velocity - a.velocity);
+  return out.slice(0, limit);
+}
+
+const scoredSinceStmt = db.prepare<[string], { n: number }>(
+  "SELECT COUNT(*) AS n FROM posts WHERE scored_at > ?",
+);
+const newEntitiesStmt = db.prepare<[string], EntityRow>(
+  "SELECT * FROM entities WHERE first_seen > ? ORDER BY mention_count DESC LIMIT 20",
+);
+export function getChanges(since: string): {
+  posts_scored_since: number;
+  new_entities: Entity[];
+  events: ReturnType<typeof getEventsSince>;
+} {
+  return {
+    posts_scored_since: scoredSinceStmt.get(since)?.n ?? 0,
+    new_entities: newEntitiesStmt.all(since).map(rowToEntity),
+    events: getEventsSince(since, 100),
+  };
+}
+
+interface JobRow {
+  id: number;
+  kind: string;
+  params: string;
+  status: string;
+  result: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+export interface Job {
+  id: number;
+  kind: string;
+  params: unknown;
+  status: string;
+  result: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+function rowToJob(r: JobRow): Job {
+  let params: unknown = r.params;
+  try {
+    params = JSON.parse(r.params);
+  } catch {
+    /* leave as string */
+  }
+  return { ...r, params };
+}
+const insertJobStmt = db.prepare(
+  "INSERT INTO jobs (kind, params, status, created_at) VALUES (@kind, @params, 'pending', @now)",
+);
+const jobByIdStmt = db.prepare<[number], JobRow>("SELECT * FROM jobs WHERE id = ?");
+const finishJobStmt = db.prepare(
+  "UPDATE jobs SET status = @status, result = @result, finished_at = @now WHERE id = @id",
+);
+export function createJob(kind: string, params: unknown, now: string): Job {
+  const info = insertJobStmt.run({ kind, params: JSON.stringify(params), now });
+  return rowToJob(jobByIdStmt.get(Number(info.lastInsertRowid))!);
+}
+export function getJob(id: number): Job | null {
+  const row = jobByIdStmt.get(id);
+  return row ? rowToJob(row) : null;
+}
+export function finishJob(id: number, status: string, result: string, now: string): void {
+  finishJobStmt.run({ id, status, result, now });
+}
+
+// Tiered retention: prune only dropped firehose noise (kept = 0) older than the
+// cutoff. Kept posts — and their longitudinal metric/seen history, the moat — are
+// preserved indefinitely. Orphaned metric/seen rows for pruned posts are swept.
+const prunePostsStmt = db.prepare("DELETE FROM posts WHERE kept = 0 AND harvested_at < ?");
+const pruneOrphanMetricsStmt = db.prepare(
+  "DELETE FROM post_metrics WHERE post_id NOT IN (SELECT id FROM posts)",
+);
+const pruneOrphanSeenStmt = db.prepare(
+  "DELETE FROM post_seen WHERE post_id NOT IN (SELECT id FROM posts)",
+);
+const prunePostsTx = db.transaction((cutoff: string) => {
+  const n = prunePostsStmt.run(cutoff).changes;
+  pruneOrphanMetricsStmt.run();
+  pruneOrphanSeenStmt.run();
+  return n;
+});
+export function prunePosts(dropRetentionDays: number): number {
+  const cutoff = new Date(Date.now() - dropRetentionDays * 86_400_000).toISOString();
+  return prunePostsTx(cutoff);
+}
+
+seedTopics(config.interest_topics);

@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import type { MarketsSnapshot } from "../shared/market.ts";
 import type { UptimeSnapshot, MonitorStatus } from "../shared/uptime.ts";
 import type { SummaryRecord, Theme, Sentiment as SentimentData } from "../shared/summary.ts";
+import type { Insight, InsightStatus } from "../shared/kb.ts";
 import { P } from "./theme.ts";
 import { relativeTime, fmtClock } from "./format.ts";
 import { PaneTicker } from "./Ticker.tsx";
@@ -203,6 +204,39 @@ function AlertsWidget({ uptime, width }: { uptime: UptimeSnapshot | null; width:
   );
 }
 
+const INSIGHT_DOT: Record<InsightStatus, string> = {
+  pending: P.news,
+  approved: P.up,
+  rejected: P.down,
+  acted: P.accent,
+};
+
+function IntelWidget({ insights, width }: { insights: Insight[]; width: number }) {
+  const pending = insights.filter((i) => i.status === "pending").length;
+  const topInsights = insights.slice(0, 3);
+  return (
+    <Panel
+      icon="✦"
+      iconColor={pending ? P.news : P.faint}
+      title="INSIGHTS"
+      meta={pending ? `${pending} pending` : `${insights.length} total`}
+      width={width}
+      flexGrow={1}
+    >
+      {topInsights.length === 0 ? (
+        <Text color={P.faint}>no insights yet.</Text>
+      ) : (
+        topInsights.map((i) => (
+          <Text key={i.id} wrap="truncate">
+            <Text color={INSIGHT_DOT[i.status] ?? P.faint}>● </Text>
+            <Text color={P.fg}>{i.title}</Text>
+          </Text>
+        ))
+      )}
+    </Panel>
+  );
+}
+
 export function DashboardView({
   summary,
   newSince,
@@ -210,6 +244,7 @@ export function DashboardView({
   total,
   markets,
   uptime,
+  insights,
   regenerating,
   width,
   height,
@@ -221,6 +256,7 @@ export function DashboardView({
   total: number;
   markets: MarketsSnapshot | null;
   uptime: UptimeSnapshot | null;
+  insights: Insight[];
   regenerating: boolean;
   width: number;
   height: number;
@@ -244,6 +280,7 @@ export function DashboardView({
         {railWidth > 0 && (
           <Box flexDirection="column" width={railWidth} marginLeft={1} minHeight={0}>
             <MarketWidget markets={markets} width={railWidth} />
+            <IntelWidget insights={insights} width={railWidth} />
             <AlertsWidget uptime={uptime} width={railWidth} />
           </Box>
         )}

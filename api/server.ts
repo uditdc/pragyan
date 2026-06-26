@@ -2,10 +2,10 @@ import express from "express";
 import type { HarvestedPost, IngestResult } from "../shared/post.ts";
 import { config } from "./config.ts";
 import { prefilter } from "./prefilter.ts";
-import { dummyScore } from "./dummyScorer.ts";
 import {
   postExists,
   upsertPost,
+  recordObservation,
   queryFeed,
   markViewed,
   dismiss,
@@ -13,11 +13,19 @@ import {
   getLatestSummary,
   getSummaries,
   countNewSince,
+  prunePosts,
 } from "./db.ts";
 import { getSnapshot, startMarkets } from "./markets.ts";
 import { startNews } from "./news.ts";
 import { getUptimeSnapshot, startUptime, checkNow } from "./uptime.ts";
 import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
+import { startScorer } from "./scorer.ts";
+import { runCapability } from "./capabilities.ts";
+import { CAPABILITIES } from "./capabilitySchema.ts";
+import { recordEvent } from "./db.ts";
+import { listInsights, getInsight, setInsightStatus } from "./kbstore.ts";
+import { action } from "./action.ts";
+import type { InsightStatus } from "../shared/kb.ts";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -51,15 +59,21 @@ app.post("/ingest", (req, res) => {
     };
 
     const verdict = prefilter(post);
-    const scores = verdict.kept ? dummyScore(post, verdict.clickbait_heuristic) : null;
 
     upsertPost({
       post,
       kept: verdict.kept,
       drop_reason: verdict.drop_reason,
       clickbait_heuristic: verdict.clickbait_heuristic,
-      scores,
-      scored_at: scores ? now : null,
+      scores: null,
+      scored_at: null,
+    });
+
+    recordObservation({
+      post,
+      kept: verdict.kept,
+      observed_at: now,
+      feed_position: typeof post.feed_position === "number" ? post.feed_position : null,
     });
 
     if (isDuplicate) result.duplicate++;
@@ -76,7 +90,7 @@ app.get("/feed", (req, res) => {
     min_score: Number(q.min_score ?? 0),
     since: typeof q.since === "string" ? q.since : null,
     limit: Math.min(200, Number(q.limit ?? 50)),
-    news_only: q.news_only === "true",
+    news_only: q.news_only !== undefined ? q.news_only === "true" : config.gates.news_only_default,
     include_dropped: q.include_dropped === "true",
     include_expired: q.include_expired === "true",
     sort: q.sort === "recent" ? "recent" : "score",
@@ -145,14 +159,69 @@ app.post("/summary/regenerate", async (_req, res) => {
   res.json(getLatestSummary());
 });
 
+app.get("/insights", (req, res) => {
+  const status = typeof req.query.status === "string" ? (req.query.status as InsightStatus) : null;
+  const limit = Math.min(200, Number(req.query.limit ?? 100) || 100);
+  res.json({ insights: listInsights(status, limit) });
+});
+
+app.post("/insights/:id/approve", (req, res) => {
+  const id = req.params.id;
+  const insight = getInsight(id);
+  if (!insight) {
+    res.status(404).json({ error: "insight not found" });
+    return;
+  }
+  const now = new Date().toISOString();
+  const result = action(insight);
+  const updated = setInsightStatus(id, "approved", now, result);
+  recordEvent("approve", { insight_id: id }, now);
+  res.json({ insight: updated });
+});
+
+app.post("/insights/:id/reject", (req, res) => {
+  const id = req.params.id;
+  const insight = getInsight(id);
+  if (!insight) {
+    res.status(404).json({ error: "insight not found" });
+    return;
+  }
+  const now = new Date().toISOString();
+  const updated = setInsightStatus(id, "rejected", now);
+  recordEvent("reject", { insight_id: id }, now);
+  res.json({ insight: updated });
+});
+
+app.get("/tools", (_req, res) => {
+  res.json({ tools: CAPABILITIES });
+});
+
+app.post("/tools/:name", async (req, res) => {
+  const args = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+  try {
+    res.json({ result: await runCapability(req.params.name, args) });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 startMarkets();
 startNews();
+startScorer();
 startSummary();
 
-const server = app.listen(config.server.port, config.server.host, () => {
-  console.log(
-    `x-feed-filter API on http://${config.server.host}:${config.server.port}`,
-  );
+setInterval(() => {
+  try {
+    const pruned = prunePosts(config.maintenance.drop_retention_days);
+    if (pruned > 0) console.log(`pruned ${pruned} dropped post(s)`);
+  } catch (err) {
+    console.error("prune failed:", err instanceof Error ? err.message : err);
+  }
+}, config.maintenance.interval_ms);
+
+const port = Number(process.env.XFEED_PORT) || config.server.port;
+const server = app.listen(port, config.server.host, () => {
+  console.log(`x-feed-filter API on http://${config.server.host}:${port}`);
   startUptime();
 });
 

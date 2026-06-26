@@ -9,7 +9,8 @@ import type {
 } from "../shared/summary.ts";
 import { EMPTY_DIGEST } from "../shared/summary.ts";
 import { config } from "./config.ts";
-import { client, llmEnabled, model } from "./llm.ts";
+import { llmEnabled, model } from "./llm.ts";
+import { callLLM } from "./budget.ts";
 import {
   getLatestSummary,
   getPostsSince,
@@ -109,16 +110,26 @@ function coerceVoices(raw: unknown): TopVoice[] {
 }
 
 async function synthesize(posts: Post[]): Promise<Digest> {
-  const res = await client!.chat.completions.create({
-    model,
-    temperature: 0.3,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userPayload(posts) },
-    ],
-  });
-  const raw = JSON.parse(res.choices[0]?.message?.content ?? "{}") as Record<string, unknown>;
+  const payload = userPayload(posts);
+  const estTokens = Math.ceil(payload.length / 4) + 1500;
+  const res = await callLLM(
+    "summary",
+    {
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: payload },
+      ],
+    },
+    estTokens,
+  );
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(res.choices[0]?.message?.content ?? "{}") as Record<string, unknown>;
+  } catch {
+    raw = {};
+  }
   return {
     tldr: String(raw.tldr ?? ""),
     themes: coerceThemes(raw.themes),

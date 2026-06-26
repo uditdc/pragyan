@@ -3,6 +3,14 @@
   "weights": { "importance": 0.5, "relevance": 0.4, "clickbait": 0.3 },
   "gates": { "min_news_confidence": 0.3, "news_only_default": false },
   "feed": { "max_age_hours": 24 },
+  "llm": {
+    "timeout_ms": 30000,
+    "max_retries": 2,
+    "max_completion_tokens": 1200,
+    "reasoning_effort": "low",
+    "limits": { "rpm": 5, "rph": 150, "rpd": 2400, "tpm": 30000, "tph": 1000000, "tpd": 1000000 },
+    "daily_token_budget": { "scorer": 850000, "summary": 150000 }
+  },
   "prefilter": {
     "engagement_floor": 2,
     "drop_replies": true,
@@ -20,9 +28,10 @@
   },
   "scoring": {
     "model": "gpt-oss-120b",
-    "batch_size": 15,
-    "max_concurrent_batches": 2,
-    "poll_interval_ms": 5000
+    "batch_size": 30,
+    "max_concurrent_batches": 1,
+    "poll_interval_ms": 45000,
+    "engagement_floor_for_llm": 5
   },
   "expiry": {
     "mark_viewed_on": "select",
@@ -58,5 +67,7 @@
       { "name": "askrera", "url": "http://127.0.0.1:3004/health" }
     ]
   },
+  "kb_dir": ".kb",
+  "maintenance": { "drop_retention_days": 7, "interval_ms": 3600000 },
   "server": { "host": "127.0.0.1", "port": 8787, "db_path": "api/feed.db" }
 }
