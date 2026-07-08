@@ -9,14 +9,6 @@ export interface Config {
   weights: { importance: number; relevance: number; clickbait: number };
   gates: { min_news_confidence: number; news_only_default: boolean };
   feed: { max_age_hours: number };
-  llm: {
-    timeout_ms: number;
-    max_retries: number;
-    max_completion_tokens: number;
-    reasoning_effort: string;
-    limits: { rpm: number; rph: number; rpd: number; tpm: number; tph: number; tpd: number };
-    daily_token_budget: { scorer: number; summary: number };
-  };
   prefilter: {
     engagement_floor: number;
     drop_replies: boolean;
@@ -24,21 +16,12 @@ export interface Config {
     clickbait_phrases: string[];
   };
   scoring: {
-    model: string;
     batch_size: number;
-    max_concurrent_batches: number;
     poll_interval_ms: number;
-    engagement_floor_for_llm: number;
   };
   expiry: {
     mark_viewed_on: string;
-    viewed_ttl_min: number;
     unviewed_ttl_hours: number;
-  };
-  summary: {
-    max_posts: number;
-    min_items: number;
-    retention: number;
   };
   sources: {
     provider: "mock" | "real";
@@ -80,7 +63,6 @@ export function validateConfig(c: Config): void {
   }
   for (const k of ["importance", "relevance", "clickbait"] as const) finite(c.weights[k], `weights.${k}`);
   finite(c.feed.max_age_hours, "feed.max_age_hours");
-  for (const k of ["rpm", "rph", "rpd", "tpm", "tph", "tpd"] as const) finite(c.llm.limits[k], `llm.limits.${k}`);
   finite(c.scoring.batch_size, "scoring.batch_size");
   finite(c.scoring.poll_interval_ms, "scoring.poll_interval_ms");
   finite(c.maintenance.drop_retention_days, "maintenance.drop_retention_days");

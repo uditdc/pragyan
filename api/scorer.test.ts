@@ -4,7 +4,7 @@ import type { HarvestedPost } from "../shared/post.ts";
 
 process.env.XFEED_DB_PATH = ":memory:";
 const { upsertPost, getUnscoredPosts } = await import("./db.ts");
-const { scoreBatchSafe } = await import("./scorer.ts");
+const { scoreQueuedPosts } = await import("./scorer.ts");
 
 function harvested(id: string, over: Partial<HarvestedPost> = {}): HarvestedPost {
   return {
@@ -39,9 +39,19 @@ test("kept posts enter the scoring queue (scored_at null)", () => {
   assert.equal(getUnscoredPosts(10).length, 2);
 });
 
-test("scoreBatchSafe drains the queue via heuristic fallback when no LLM is configured", async () => {
+test("scoreQueuedPosts drains the queue with heuristic scores", () => {
   const pending = getUnscoredPosts(10);
   assert.ok(pending.length >= 2);
-  await scoreBatchSafe(pending, "2026-06-01T01:00:00.000Z");
+  scoreQueuedPosts(pending, "2026-06-01T01:00:00.000Z");
   assert.equal(getUnscoredPosts(10).length, 0);
+});
+
+test("google_news posts score as news; x posts do not", async () => {
+  const { dummyScore } = await import("./dummyScorer.ts");
+  const news = dummyScore(harvested("n1", { source: "google_news" }), 0.1);
+  assert.equal(news.is_news, true);
+  assert.equal(news.news_confidence, 1);
+  const x = dummyScore(harvested("x1"), 0.1);
+  assert.equal(x.is_news, false);
+  assert.equal(x.news_confidence, 0);
 });

@@ -6,16 +6,15 @@ import {
   postViewed,
   postDismiss,
   postUndismiss,
-  fetchSummaries,
-  regenerateSummary,
+  fetchReports,
   fetchInsights,
   approveInsight,
   rejectInsight,
 } from "./api.ts";
-import type { SummaryRecord } from "../shared/summary.ts";
+import type { ReportRecord } from "../shared/report.ts";
 import { consolidateThreads } from "./threads.ts";
 import { pickWindow } from "./layout.ts";
-import { fmtClock } from "./format.ts";
+import { fmtClock, relativeAgo } from "./format.ts";
 import { sourceOf, P } from "./theme.ts";
 import { config } from "./config.ts";
 import { TopBar, TABS } from "./TopBar.tsx";
@@ -78,10 +77,9 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
   const [tabIdx, setTabIdx] = useState(TABS.indexOf("feed"));
   const [markets, setMarkets] = useState<MarketsSnapshot | null>(null);
   const [uptime, setUptime] = useState<UptimeSnapshot | null>(null);
-  const [summaries, setSummaries] = useState<SummaryRecord[]>([]);
-  const [summaryNew, setSummaryNew] = useState(0);
-  const [summaryIdx, setSummaryIdx] = useState(0);
-  const [regenerating, setRegenerating] = useState(false);
+  const [reports, setReports] = useState<ReportRecord[]>([]);
+  const [reportNew, setReportNew] = useState(0);
+  const [reportIdx, setReportIdx] = useState(0);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [insightIdx, setInsightIdx] = useState(0);
   const [reader, setReader] = useState(false);
@@ -142,13 +140,13 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     }
   }, [baseUrl]);
 
-  const loadSummary = useCallback(async () => {
+  const loadReports = useCallback(async () => {
     try {
-      const res = await fetchSummaries(baseUrl);
-      setSummaries(res.summaries);
-      setSummaryNew(res.new_since);
+      const res = await fetchReports(baseUrl);
+      setReports(res.reports);
+      setReportNew(res.new_since);
     } catch {
-      /* keep last digest */
+      /* keep last report */
     }
   }, [baseUrl]);
 
@@ -164,12 +162,12 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
     void load();
     void loadMarkets();
     void loadUptime();
-    void loadSummary();
+    void loadReports();
     void loadInsights();
     const poll = setInterval(() => void load(), pollMs);
     const marketPoll = setInterval(() => void loadMarkets(), 10_000);
     const uptimePoll = setInterval(() => void loadUptime(), 15_000);
-    const summaryPoll = setInterval(() => void loadSummary(), 30_000);
+    const reportPoll = setInterval(() => void loadReports(), 30_000);
     const kbPoll = setInterval(() => void loadInsights(), 20_000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
     const anim = config.matrix_rain ? setInterval(() => setFrame((f) => f + 1), 130) : null;
@@ -177,12 +175,12 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       clearInterval(poll);
       clearInterval(marketPoll);
       clearInterval(uptimePoll);
-      clearInterval(summaryPoll);
+      clearInterval(reportPoll);
       clearInterval(kbPoll);
       clearInterval(clock);
       if (anim) clearInterval(anim);
     };
-  }, [load, loadMarkets, loadUptime, loadSummary, loadInsights, pollMs]);
+  }, [load, loadMarkets, loadUptime, loadReports, loadInsights, pollMs]);
 
   useEffect(() => {
     const flushViewed = () => {
@@ -297,11 +295,8 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       }
       if (input === "r") {
         if (onDashboardTab) {
-          setRegenerating(true);
-          setSummaryIdx(0);
-          void regenerateSummary(baseUrl)
-            .then(loadSummary)
-            .finally(() => setRegenerating(false));
+          setReportIdx(0);
+          void loadReports();
         } else if (onUptimeTab) {
           void recheckUptime(baseUrl).then(setUptime).catch(() => {});
         } else if (onInsightsTab) {
@@ -337,9 +332,9 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
       }
       if (onDashboardTab) {
         if (input === "h" || key.leftArrow) {
-          setSummaryIdx((i) => Math.min(summaries.length - 1, i + 1));
+          setReportIdx((i) => Math.min(reports.length - 1, i + 1));
         } else if (input === "l" || key.rightArrow) {
-          setSummaryIdx((i) => Math.max(0, i - 1));
+          setReportIdx((i) => Math.max(0, i - 1));
         }
         return;
       }
@@ -448,14 +443,13 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         </Box>
       ) : onDashboardTab ? (
         <DashboardView
-          summary={summaries[Math.min(summaryIdx, summaries.length - 1)] ?? null}
-          newSince={summaryNew}
-          index={summaries.length ? Math.min(summaryIdx, summaries.length - 1) : 0}
-          total={summaries.length}
+          report={reports[Math.min(reportIdx, reports.length - 1)] ?? null}
+          newSince={reportNew}
+          index={reports.length ? Math.min(reportIdx, reports.length - 1) : 0}
+          total={reports.length}
           markets={markets}
           uptime={uptime}
           insights={insights}
-          regenerating={regenerating}
           width={columns}
           height={bodyRows}
           now={now}
@@ -466,7 +460,11 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
         reader && insights[insightIdx] ? (
           <KbReader
             kind="INSIGHT"
-            meta={`${insights[insightIdx].status} · ${insights[insightIdx].source_refs.length} source(s)`}
+            meta={`${insights[insightIdx].status}${
+              insights[insightIdx].updated_at
+                ? ` · ↻ revised ${relativeAgo(insights[insightIdx].updated_at, now)}`
+                : ""
+            } · ${insights[insightIdx].source_refs.length} source(s)`}
             headline={insights[insightIdx].title}
             lead={insights[insightIdx].rationale ? `why: ${insights[insightIdx].rationale}` : undefined}
             body={insights[insightIdx].body}
@@ -481,6 +479,7 @@ export function App({ baseUrl, pollMs, limit, initialThresholdIdx }: Props) {
             selectedIdx={Math.min(insightIdx, Math.max(0, insights.length - 1))}
             width={columns}
             height={bodyRows}
+            now={now}
           />
         )
       ) : (

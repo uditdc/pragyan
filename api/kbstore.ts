@@ -4,11 +4,13 @@ import { dirname, join, isAbsolute } from "node:path";
 import { randomUUID } from "node:crypto";
 import { config } from "./config.ts";
 import type { Dossier, Insight, InsightStatus, Lead } from "../shared/kb.ts";
+import type { ReportRecord } from "../shared/report.ts";
 
 // Filesystem-backed store for Claude's prose artifacts (insights, dossiers,
-// leads). Each is a Markdown file with a JSON frontmatter header — human
-// readable, greppable, portable — and pragyan only indexes/serves them. The DB
-// holds the scraped/pre-processed bulk (posts, entities, events); this does not.
+// leads, day reports). Each is a Markdown file with a JSON frontmatter header —
+// human readable, greppable, portable — and pragyan only indexes/serves them.
+// The DB holds the scraped/pre-processed bulk (posts, entities, events); this
+// does not.
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const configured = process.env.XFEED_KB_DIR ?? config.kb_dir;
@@ -18,6 +20,7 @@ const dirs = {
   insights: join(root, "insights"),
   dossiers: join(root, "dossiers"),
   leads: join(root, "leads"),
+  daily: join(root, "daily"),
 };
 for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
 
@@ -79,6 +82,7 @@ function recordToInsight(meta: Record<string, unknown>, body: string): Insight {
     rationale: String(meta.rationale ?? ""),
     source_refs: Array.isArray(meta.source_refs) ? (meta.source_refs as string[]) : [],
     created_at: String(meta.created_at),
+    updated_at: (meta.updated_at as string) ?? null,
     approved_at: (meta.approved_at as string) ?? null,
     rejected_at: (meta.rejected_at as string) ?? null,
     acted_at: (meta.acted_at as string) ?? null,
@@ -99,6 +103,7 @@ export function insertInsight(i: NewInsight): Insight {
     rationale: i.rationale,
     source_refs: i.source_refs,
     created_at: i.created_at,
+    updated_at: null,
     approved_at: null,
     rejected_at: null,
     acted_at: null,
@@ -121,6 +126,31 @@ export function listInsights(status: InsightStatus | null, limit: number): Insig
     .filter((i) => (status ? i.status === status : true))
     .sort(byCreatedDesc)
     .slice(0, limit);
+}
+export interface InsightRevision {
+  title: string;
+  body: string;
+  rationale: string;
+  source_refs: string[];
+}
+export function reviseInsight(
+  id: string,
+  r: InsightRevision,
+  now: string,
+): Insight | "not_found" | "not_pending" {
+  const existing = getInsight(id);
+  if (!existing) return "not_found";
+  if (existing.status !== "pending") return "not_pending";
+  const revised: Insight = {
+    ...existing,
+    title: r.title || existing.title,
+    body: r.body || existing.body,
+    rationale: r.rationale || existing.rationale,
+    source_refs: [...new Set([...existing.source_refs, ...r.source_refs])],
+    updated_at: now,
+  };
+  writeInsight(revised);
+  return revised;
 }
 export function setInsightStatus(
   id: string,
@@ -163,6 +193,105 @@ export function upsertDossier(topic: string, state: string, updatedBy: string, n
     join(dirs.dossiers, `${slug(topic)}.md`),
     serialize({ topic, updated_at: now, updated_by: updatedBy }, state),
   );
+}
+export function listDossiers(): Array<Omit<Dossier, "state">> {
+  return readRecords(dirs.dossiers)
+    .map((r) => ({
+      topic: String(r.meta.topic ?? ""),
+      updated_at: (r.meta.updated_at as string) ?? null,
+      updated_by: (r.meta.updated_by as string) ?? null,
+    }))
+    .sort((a, b) => ((a.updated_at ?? "") < (b.updated_at ?? "") ? 1 : -1));
+}
+
+// ── day reports (one living file per local day, rewritten each review pass) ──
+
+export function localDay(d = new Date()): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+const DAY_FILE = /^\d{4}-\d{2}-\d{2}\.md$/;
+
+function recordToReport(meta: Record<string, unknown>, body: string): ReportRecord {
+  const refs = Array.isArray(meta.source_refs) ? (meta.source_refs as string[]) : [];
+  return {
+    day: String(meta.day ?? ""),
+    updated_at: String(meta.updated_at ?? ""),
+    revision: Number(meta.revision) || 1,
+    window_end: String(meta.window_end ?? ""),
+    item_count: refs.length,
+    tldr: String(meta.tldr ?? ""),
+    markdown: body,
+    source_refs: refs,
+  };
+}
+
+export function getReport(day: string): ReportRecord | null {
+  try {
+    const parsed = parse(readFileSync(join(dirs.daily, `${day}.md`), "utf8"));
+    return parsed ? recordToReport(parsed.meta, parsed.body) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function listReports(limit: number): ReportRecord[] {
+  let files: string[];
+  try {
+    files = readdirSync(dirs.daily).filter((f) => DAY_FILE.test(f));
+  } catch {
+    return [];
+  }
+  files.sort().reverse();
+  const out: ReportRecord[] = [];
+  for (const f of files.slice(0, limit)) {
+    const parsed = parse(readFileSync(join(dirs.daily, f), "utf8"));
+    if (parsed) out.push(recordToReport(parsed.meta, parsed.body));
+  }
+  return out;
+}
+
+export interface ReportUpdate {
+  day: string;
+  tldr: string;
+  markdown: string;
+  source_refs: string[];
+  window_end: string;
+  now: string;
+}
+
+export function upsertReport(u: ReportUpdate): ReportRecord {
+  const prev = getReport(u.day);
+  const refs = [...new Set([...(prev?.source_refs ?? []), ...u.source_refs])];
+  const window_end =
+    prev && prev.window_end > u.window_end ? prev.window_end : u.window_end;
+  const report: ReportRecord = {
+    day: u.day,
+    updated_at: u.now,
+    revision: (prev?.revision ?? 0) + 1,
+    window_end,
+    item_count: refs.length,
+    tldr: u.tldr,
+    markdown: u.markdown,
+    source_refs: refs,
+  };
+  writeFileSync(
+    join(dirs.daily, `${u.day}.md`),
+    serialize(
+      {
+        day: report.day,
+        updated_at: report.updated_at,
+        revision: report.revision,
+        window_end: report.window_end,
+        tldr: report.tldr,
+        source_refs: report.source_refs,
+      },
+      report.markdown,
+    ),
+  );
+  return report;
 }
 
 // ── leads (Claude's breadcrumbs for future loops) ──

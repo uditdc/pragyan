@@ -84,9 +84,10 @@ TTLs, and market sources. Re-tuning the feed never touches code. Harvest behavio
 
 Posts go through a two-stage rank: a synchronous heuristic pre-filter at ingest
 (flags ads, pure replies, low-engagement and clickbait — flagged rows are kept,
-not deleted), then a background **LLM scorer** (`api/scorer.ts`) drains the
-`scored_at IS NULL` queue for topic-aware relevance, falling back to the heuristic
-(`api/dummyScorer.ts`) whenever the shared Cerebras budget is exhausted. The broader
+not deleted), then a background drainer (`api/scorer.ts`) gives every kept post a baseline
+heuristic score (`api/dummyScorer.ts`) so the feed always ranks. pragyan itself makes no
+LLM calls — the intelligent review is the **`/pragyan-tick`** Claude Code skill, which
+reads the feed over MCP and rewrites the living day report (`.kb/daily/`). The broader
 two-tier design — Claude as an external brain reaching pragyan over an MCP server —
 lives in [`docs/plans/phase6.md`](docs/plans/phase6.md).
 

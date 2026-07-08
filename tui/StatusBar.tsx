@@ -46,7 +46,7 @@ export function StatusBar({ width, xCount, newsCount, buffer, stream, down, filt
   const right: Seg[] = [
     { t: `${STREAM_LABEL[stream]}   `, c: STREAM_COLOR[stream] },
     {
-      t: "1-5 tabs · space pause · t thr · n news · s sort · ←/→ digest history · r refresh/regen · q quit",
+      t: "1-5 tabs · space pause · t thr · n news · s sort · ←/→ days · r refresh · q quit",
       c: P.faint,
     },
   ];

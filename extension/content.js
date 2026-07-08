@@ -6,8 +6,10 @@
     batchSize: 20,
     flushMs: 3000,
     autoScroll: true,
-    scrollCap: 60,
-    emptyStop: 3,
+    scrollCap: 300,
+    emptyStop: 30,
+    captureTargetMin: 100,
+    captureTargetMax: 200,
     scrollStep: 0.8,
     minDelayMs: 800,
     maxDelayMs: 1800,
@@ -112,9 +114,16 @@
     state = "scrolling";
     render();
 
+    const captureTarget = Math.round(jitter(config.captureTargetMin, config.captureTargetMax));
+    const startCaptured = captured.size;
     let scrolls = 0;
     let emptyStreak = 0;
-    while (!stopRequested && scrolls < config.scrollCap && emptyStreak < config.emptyStop) {
+    while (
+      !stopRequested &&
+      scrolls < config.scrollCap &&
+      emptyStreak < config.emptyStop &&
+      captured.size - startCaptured < captureTarget
+    ) {
       const before = captured.size;
       window.scrollBy(0, Math.round(window.innerHeight * config.scrollStep));
       scrolls++;

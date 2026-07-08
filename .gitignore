@@ -6,3 +6,4 @@ api/*.db-wal
 .env
 TODO
 .kb/
+.claude/run/

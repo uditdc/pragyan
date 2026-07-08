@@ -1,5 +1,16 @@
 # Plan: Phase 6 — agentic knowledge base (Claude as external brain; pragyan as eyes, ears, hands & memory)
 
+> **Amendment (2026-07):** the Cerebras `gpt-oss-120b` triage tier is gone, and pragyan now
+> makes **zero LLM calls** (`api/llm.ts`, `api/budget.ts`, the in-process digest, and the
+> `summaries` DB table were all removed). Scoring is heuristic-only (`api/dummyScorer.ts`
+> baseline). All cognition runs as Claude Code skills over MCP on a schedule:
+> **`/pragyan-tick`** maintains a **living day report** — one markdown file per local day
+> in `.kb/daily/`, rewritten each pass via `submit_report` (revision counter, provenance
+> union, `window_end` high-water mark), rendered on the TUI dashboard with ←/→ walking past
+> days; the day's final revision is the durable daily record — and, when a topic runs hot,
+> the same pass goes deep (dossiers, approval-gated insights, leads). Every "Cerebras tier"
+> mention below is historical — that role moved into the scheduled skill.
+
 ## Context
 
 Phase 6 turns pragyan into a knowledge engine with a **two-tier intelligence model**:
@@ -203,7 +214,9 @@ A **thin client over the REST API on 127.0.0.1:8787** (only the API process writ
   `get_signals` (markets/news/uptime via `getSnapshot`), `get_trending` (high-velocity /
   recurring posts from Step 2 — what's *moving*, not just what's recent).
 - **memory** — `query_memory({entity?, topic?, author?, since?, kind?})` over the Step 2/3
-  history, `get_dossier(topic)`, `get_reports`/`get_insights` (Claude reads its own prior output),
+  history, `get_dossier(topic)`, `list_dossiers` (existing topic names, so a pass reuses them
+  instead of forking near-duplicates), `get_reports`/`get_insights` (Claude reads its own prior
+  output),
   and **`get_changes(since)`** — the structured diff of what's new/changed since the last loop
   (new entities, velocity spikes, topics heating up, flagged authors active). This change feed is
   the always-on payoff and lets Claude skip a deep pass when nothing moved.
@@ -215,7 +228,9 @@ A **thin client over the REST API on 127.0.0.1:8787** (only the API process writ
   (extension polls `/commands`) to drive the authenticated X session (expand thread / scrape
   profile). New actuators (other authenticated sessions, local access, notifications) register the
   same way.
-- **write** — `submit_report`, `submit_insight`, `submit_lead`, `update_dossier`.
+- **write** — `submit_report`, `submit_insight` (pass `id` to revise a still-pending insight in
+  place — content replaces, provenance unions), `submit_lead`, `update_dossier` (returns
+  `created` so a pass notices when it forked a new dossier instead of updating one).
 
 ### `api/server.ts` — REST backing
 `GET /signals|/trending|/changes|/dossier/:topic|/reports|/insights`, `GET /memory` (query),

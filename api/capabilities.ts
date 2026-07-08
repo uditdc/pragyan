@@ -7,6 +7,7 @@ import {
   finishJob,
   getChanges,
   getJob,
+  getPostsByIds,
   getTopTopics,
   getTrending,
   searchPosts,
@@ -14,13 +15,19 @@ import {
 } from "./db.ts";
 import {
   getDossier,
+  getReport,
   insertInsight,
   insertLead,
+  listDossiers,
   listInsights,
+  listReports,
+  localDay,
+  reviseInsight,
   upsertDossier,
+  upsertReport,
 } from "./kbstore.ts";
 
-const PASSTHROUGH = new Set(["search_feed", "recent_feed", "search_summaries", "get_latest_summary"]);
+const PASSTHROUGH = new Set(["search_feed", "recent_feed"]);
 
 function clampNum(raw: unknown, fallback: number, max: number): number {
   const n = Math.floor(Number(raw));
@@ -89,6 +96,8 @@ export async function runCapability(name: string, args: Record<string, unknown>)
       const topic = topicOf(args.topic);
       return topic ? { topic, dossier: getDossier(topic) } : null;
     }
+    case "list_dossiers":
+      return listDossiers();
     case "get_insights":
       return listInsights(
         typeof args.status === "string" ? (args.status as InsightStatus) : null,
@@ -105,23 +114,71 @@ export async function runCapability(name: string, args: Record<string, unknown>)
       void runHarvestJob(job.id, args);
       return { job_id: job.id, status: job.status };
     }
-    case "submit_insight":
+    case "submit_insight": {
+      const refs = Array.isArray(args.source_refs) ? (args.source_refs as unknown[]).map(String) : [];
+      const id = str(args.id).trim();
+      if (id) {
+        const revised = reviseInsight(
+          id,
+          { title: str(args.title), body: str(args.body), rationale: str(args.rationale), source_refs: refs },
+          now,
+        );
+        if (revised === "not_found") return { error: `no insight with id ${id}` };
+        if (revised === "not_pending")
+          return { error: "only pending insights can be revised; submit a new insight instead" };
+        return revised;
+      }
       return insertInsight({
         topic: topicOf(args.topic),
         title: str(args.title),
         body: str(args.body),
         rationale: str(args.rationale),
-        source_refs: Array.isArray(args.source_refs) ? (args.source_refs as unknown[]).map(String) : [],
+        source_refs: refs,
         created_at: now,
       });
+    }
     case "submit_lead":
       insertLead(str(args.note), topicOf(args.topic), now);
       return { ok: true };
+    case "get_report": {
+      const day = str(args.day).trim() || localDay();
+      return { day, report: getReport(day) };
+    }
+    case "list_reports":
+      return listReports(clampNum(args.limit, 14, 60)).map((r) => ({
+        day: r.day,
+        updated_at: r.updated_at,
+        revision: r.revision,
+        window_end: r.window_end,
+        item_count: r.item_count,
+        tldr: r.tldr,
+      }));
+    case "submit_report": {
+      const tldr = str(args.tldr).trim();
+      const markdown = str(args.markdown).trim();
+      const refs = Array.isArray(args.source_refs)
+        ? (args.source_refs as unknown[]).map(String).filter(Boolean)
+        : [];
+      if (!tldr || !markdown) return { error: "missing tldr or markdown" };
+      if (refs.length === 0) return { error: "ungrounded report: source_refs must cite the post ids used" };
+      const cited = getPostsByIds(refs);
+      const times = cited.map((p) => p.harvested_at).sort();
+      const report = upsertReport({
+        day: localDay(),
+        tldr,
+        markdown,
+        source_refs: refs,
+        window_end: times[times.length - 1] ?? now,
+        now,
+      });
+      return { ok: true, day: report.day, revision: report.revision, window_end: report.window_end };
+    }
     case "update_dossier": {
       const topic = topicOf(args.topic);
       if (!topic) return { error: "missing topic" };
+      const created = getDossier(topic) === null;
       upsertDossier(topic, str(args.state), "claude", now);
-      return { ok: true };
+      return { ok: true, created };
     }
     default:
       return { error: `unknown capability: ${name}` };

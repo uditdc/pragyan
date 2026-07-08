@@ -22,7 +22,7 @@ export const P = {
 export type Source = "x" | "news";
 
 export function sourceOf(post: Post): Source {
-  return post.scores?.is_news ? "news" : "x";
+  return post.source === "google_news" || post.scores?.is_news ? "news" : "x";
 }
 
 export function sourceColor(source: Source): string {

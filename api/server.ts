@@ -10,20 +10,17 @@ import {
   markViewed,
   dismiss,
   undismiss,
-  getLatestSummary,
-  getSummaries,
   countNewSince,
   prunePosts,
 } from "./db.ts";
 import { getSnapshot, startMarkets } from "./markets.ts";
 import { startNews } from "./news.ts";
 import { getUptimeSnapshot, startUptime, checkNow } from "./uptime.ts";
-import { startSummary, tick as generateSummary } from "./summaryGenerator.ts";
 import { startScorer } from "./scorer.ts";
 import { runCapability } from "./capabilities.ts";
 import { CAPABILITIES } from "./capabilitySchema.ts";
 import { recordEvent } from "./db.ts";
-import { listInsights, getInsight, setInsightStatus } from "./kbstore.ts";
+import { listInsights, getInsight, setInsightStatus, listReports } from "./kbstore.ts";
 import { action } from "./action.ts";
 import type { InsightStatus } from "../shared/kb.ts";
 
@@ -137,26 +134,13 @@ app.post("/uptime/check", async (_req, res) => {
   res.json(await checkNow());
 });
 
-app.get("/summary", (_req, res) => {
-  const summary = getLatestSummary();
+app.get("/reports", (req, res) => {
+  const limit = Math.min(60, Number(req.query.limit ?? 30));
+  const reports = listReports(limit);
   res.json({
-    summary,
-    new_since: summary ? countNewSince(summary.window_end) : 0,
+    reports,
+    new_since: reports.length > 0 && reports[0].window_end ? countNewSince(reports[0].window_end) : 0,
   });
-});
-
-app.get("/summaries", (req, res) => {
-  const limit = Math.min(100, Number(req.query.limit ?? 50));
-  const summaries = getSummaries(limit);
-  res.json({
-    summaries,
-    new_since: summaries.length > 0 ? countNewSince(summaries[0].window_end) : 0,
-  });
-});
-
-app.post("/summary/regenerate", async (_req, res) => {
-  await generateSummary();
-  res.json(getLatestSummary());
 });
 
 app.get("/insights", (req, res) => {
@@ -208,7 +192,6 @@ app.post("/tools/:name", async (req, res) => {
 startMarkets();
 startNews();
 startScorer();
-startSummary();
 
 setInterval(() => {
   try {

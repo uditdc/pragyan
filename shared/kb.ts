@@ -39,6 +39,7 @@ export interface Insight {
   rationale: string;
   source_refs: string[];
   created_at: string;
+  updated_at: string | null;
   approved_at: string | null;
   rejected_at: string | null;
   acted_at: string | null;

@@ -35,10 +35,17 @@ export const CAPABILITIES: CapabilityDescriptor[] = [
     inputSchema: obj({ news_only: bool, limit: num }),
   },
   {
-    name: "search_summaries",
+    name: "get_report",
     kind: "read",
-    description: "Past rolling-digest summaries, most recent first.",
-    inputSchema: obj({ since_hours: num, limit: num }),
+    description:
+      "The living day report (markdown) for a day (YYYY-MM-DD, default today) — includes window_end, the high-water mark of posts already covered.",
+    inputSchema: obj({ day: str }),
+  },
+  {
+    name: "list_reports",
+    kind: "read",
+    description: "Past day reports, most recent first (metadata + tldr, no body).",
+    inputSchema: obj({ limit: num }),
   },
   {
     name: "get_top_topics",
@@ -72,6 +79,13 @@ export const CAPABILITIES: CapabilityDescriptor[] = [
     inputSchema: obj({ topic: str }),
   },
   {
+    name: "list_dossiers",
+    kind: "memory",
+    description:
+      "All existing dossiers (topic + last updated, no body). Check before update_dossier and reuse the exact existing topic string — a near-duplicate name forks a second dossier.",
+    inputSchema: obj({}),
+  },
+  {
     name: "get_insights",
     kind: "memory",
     description: "Stored insights, optionally filtered by status (pending/approved/rejected/acted).",
@@ -101,8 +115,9 @@ export const CAPABILITIES: CapabilityDescriptor[] = [
   {
     name: "submit_insight",
     kind: "write",
-    description: "Store an actionable insight (status starts pending, awaits one human approval). source_refs: post ids or URLs.",
-    inputSchema: obj({ topic: str, title: str, body: str, rationale: str, source_refs: { type: "array" } }),
+    description:
+      "Store an actionable insight (status starts pending, awaits one human approval), or pass the id of an existing pending insight to revise it in place instead of filing a duplicate — check get_insights(status: pending) first. A revision replaces title/body/rationale and unions source_refs. source_refs: post ids or URLs.",
+    inputSchema: obj({ id: str, topic: str, title: str, body: str, rationale: str, source_refs: { type: "array" } }),
   },
   {
     name: "submit_lead",
@@ -111,9 +126,17 @@ export const CAPABILITIES: CapabilityDescriptor[] = [
     inputSchema: obj({ note: str, topic: str }),
   },
   {
+    name: "submit_report",
+    kind: "write",
+    description:
+      "Upsert today's living day report (shown on the dashboard, durable in .kb/daily/): tldr (2-3 sentences for the whole day), markdown body ('## KICKER — headline' sections, bullets only), source_refs = post ids cited. Revisions accumulate provenance; fails closed if ungrounded.",
+    inputSchema: obj({ tldr: str, markdown: str, source_refs: { type: "array" } }),
+  },
+  {
     name: "update_dossier",
     kind: "write",
-    description: "Replace a topic's living dossier state with your updated understanding.",
+    description:
+      "Replace a topic's living dossier state with your updated understanding. The topic string keys the file — call list_dossiers first and reuse the existing name. Returns created: true when this made a brand-new dossier rather than updating one.",
     inputSchema: obj({ topic: str, state: str }),
   },
 ];

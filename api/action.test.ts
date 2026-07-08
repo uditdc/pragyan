@@ -13,6 +13,7 @@ function insight(over: Partial<Insight> = {}): Insight {
     rationale: "capex thesis",
     source_refs: ["1900000000000000001"],
     created_at: "2026-06-01T00:00:00.000Z",
+    updated_at: null,
     approved_at: null,
     rejected_at: null,
     acted_at: null,

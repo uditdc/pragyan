@@ -1,14 +1,14 @@
-import type OpenAI from "openai";
 import type { Post } from "../shared/post.ts";
-import type { SummaryRecord } from "../shared/summary.ts";
-import {
-  searchPosts,
-  searchSummaries,
-  getLatestSummary,
-  type PostSearchQuery,
-} from "./db.ts";
+import { searchPosts, type PostSearchQuery } from "./db.ts";
 
-type Tool = OpenAI.Chat.Completions.ChatCompletionTool;
+interface Tool {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
 
 // Feed/digest search tools, backed directly by the SQLite store. Exposed as a
 // reusable layer for an MCP server (or any tool-calling client).
@@ -20,19 +20,9 @@ function projectPost(p: Post) {
     text: p.text.slice(0, 280),
     url: p.url,
     created_at: p.created_at,
-    is_news: Boolean(p.scores?.is_news),
+    is_news: p.source === "google_news" || Boolean(p.scores?.is_news),
     likes: p.metrics.likes,
     reposts: p.metrics.reposts,
-  };
-}
-
-function projectSummary(s: SummaryRecord) {
-  return {
-    generated_at: s.generated_at,
-    window_start: s.window_start,
-    window_end: s.window_end,
-    tldr: s.digest.tldr,
-    themes: s.digest.themes.map((t) => ({ kicker: t.kicker, title: t.title, body: t.body })),
   };
 }
 
@@ -68,28 +58,6 @@ export const TOOLS: Tool[] = [
           limit: { type: "number", description: "Max results (default 20)." },
         },
       },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "search_summaries",
-      description: "Get past digest summaries, most recent first, optionally limited to recent ones.",
-      parameters: {
-        type: "object",
-        properties: {
-          since_hours: { type: "number", description: "Only digests from the last N hours." },
-          limit: { type: "number", description: "Max digests (default 5)." },
-        },
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_latest_summary",
-      description: "Get the single most recent digest summary.",
-      parameters: { type: "object", properties: {} },
     },
   },
 ];
@@ -130,15 +98,6 @@ export function runTool(name: string, args: Record<string, unknown>): unknown {
         limit: clampLimit(args.limit, 20, 20),
         include_expired: false,
       }).map(projectPost);
-    case "search_summaries":
-      return searchSummaries({
-        since: sinceFrom(args.since_hours),
-        limit: clampLimit(args.limit, 5, 20),
-      }).map(projectSummary);
-    case "get_latest_summary": {
-      const latest = getLatestSummary();
-      return latest ? projectSummary(latest) : null;
-    }
     default:
       return { error: `unknown tool: ${name}` };
   }

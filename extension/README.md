@@ -27,8 +27,11 @@ blocks that. It hands batches to the service worker, which is not bound by the p
 
 By default the harvester auto-scrolls the timeline: each tick scrolls ~80% of a viewport,
 waits for new articles to render (polls — no fixed sleep), harvests, then repeats with a
-jittered human-paced delay. It stops after `scrollCap` total scrolls **or** `emptyStop`
-consecutive scrolls that surface nothing new (i.e. the end of the loaded feed).
+jittered human-paced delay. Each run targets a jittered `captureTargetMin`–`captureTargetMax`
+new posts (default 100–200) before pausing, so ordinary reflow/repeat streaks from X's
+virtualized timeline don't cut a run short. `scrollCap` (total scrolls) and `emptyStop`
+(consecutive scrolls with nothing new) remain as safety nets for a genuinely exhausted or
+stuck feed.
 
 - **Disable it** in options (uncheck *Auto-scroll the timeline*) → falls back to manual
   harvesting: posts are still captured as you scroll by hand.
